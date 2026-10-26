@@ -26,3 +26,14 @@ test('el mapa diario divide correctamente una sesión a medianoche local',()=>{
  const a=new Date(2025,9,1,22),b=new Date(2025,9,2,2);const rows=[{...base,start:a.toISOString(),end:b.toISOString(),clippedStart:a,clippedEnd:b}];assert.equal(dailyMinutes(rows,a),120);assert.equal(dailyMinutes(rows,b),120);
 });
 test('muestra anual consistente y segura para renderizar nombres',()=>{const demo=makeDemo(new Date('2026-10-26T12:00:00Z'));assert.ok(demo.length>1000);assert.doesNotThrow(()=>validateImport({version:1,records:demo}));assert.equal(esc('<img onerror="x">'),'&lt;img onerror=&quot;x&quot;&gt;')});
+
+test('solo los tramos en voz suman al club, incluso con Discord invisible o mute',async()=>{
+ const {voiceRecords}=await import('../dist/model.js');
+ const records=[{inVoice:false,userId:'online',game:'Juego solo',minutes:60},
+ {inVoice:true,userId:'invisible',name:'Invisible',status:'offline',muted:true,game:null,minutes:30,sessionId:'s',end:'2025-01-01'},
+ {inVoice:true,userId:'jugador',name:'Jugador',game:'Juego en voz',minutes:45,sessionId:'s',end:'2025-01-01'}];
+ const result=summarize(voiceRecords(records));
+ assert.equal(result.total,75);assert.equal(result.players.length,2);assert.equal(result.play,45);
+ assert.equal(result.games[0].name,'Juego en voz');assert.ok(!result.players.some(p=>p.id==='online'));
+ assert.equal(records.length,3);
+});

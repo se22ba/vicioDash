@@ -56,7 +56,9 @@ class Observer:
             self.connected = False
 
     def snapshot(self):
-        return [{**a["state"], "start": stamp(a["start"])} for a in self.active.values()] if self.connected else []
+        # The live club is voice attendance, not the list of Discord users online.
+        return [{**a["state"], "start": stamp(a["start"])} for a in self.active.values()
+                if a["state"].get("inVoice") is True] if self.connected else []
 
     def blocks(self, r):
         active = self.active.get(r["userId"])

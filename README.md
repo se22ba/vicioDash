@@ -1,14 +1,14 @@
 # VICIO — El club en números
 
-Dashboard de actividad gamer en español. Diseño de marcador editorial: papel, tinta, verde ácido, tipografía condensada y gráficos sin dependencias de UI.
+Dashboard de actividad gamer en español. Diseño inspirado en Deadpool: negro mate, rojo, blanco cálido, trama de cómic, imagen aportada por el usuario e ícono de máscara. Sin dependencias de UI.
 
 ## Radar del sota
 
-La pantalla principal prioriza a los integrantes que no aparecen. La lista de integrantes es independiente del historial: alguien con cero conexiones tiene su fila. Desde **Agregar integrante** se puede definir nombre, ID de Discord opcional, fecha de alta y si está en el radar o en pausa. El bot incorpora también a los miembros que estén offline al iniciar.
+La pantalla principal prioriza a los integrantes que no aparecen. La lista de integrantes es independiente del historial: alguien con cero conexiones tiene su fila. Desde **Agregar integrante** se puede definir nombre, ID de Discord opcional, fecha de alta y si está en el radar o en pausa. El bot incorpora automáticamente a los miembros humanos del servidor, incluidos los desconectados, y revisa la lista cada minuto mientras está activo. No hace falta agregarlos a mano. El tablero abre los datos reales por defecto; **Ver muestra ficticia** es opcional. En **La banda** se ve la lista completa y en **Resumen → Agregar integrante** se puede hacer una carga manual.
 
-El radar muestra última señal, días sin conectar, días conectado en el período, días en voz y días con juego + voz. Ordena primero los que nunca registraron actividad, después los que no aparecieron en el período, los que llevan 7 días o más sin señal y los que estuvieron online sin entrar a voz. La pausa conserva los datos y evita marcar ausencias.
+**Asistencia = entrar a un canal de voz.** Estar online en Discord no convierte a nadie en activo. “Ahora en voz” muestra solo quienes están dentro de voz y el nombre del canal; muteados e invisibles en voz también cuentan. Resumen, La banda y Los juegos calculan sus métricas solo con tramos en voz. El radar mide última visita a voz, días y horas en voz, juego + voz y ausencias; una señal online reciente no tapa una ausencia. La lista sigue incluyendo a todos para reconocer a quienes no entran. La pausa conserva el historial y evita avisos de ausencia. El historial conserva también la presencia fuera de voz, rotulada como contexto; los registros anteriores no se borran.
 
-El radar usa el período y el jugador elegidos; los filtros de juego y actividad solo afectan a las estadísticas de debajo. Así, filtrar por un juego no convierte falsamente en ausente a quien jugó otro. Las fechas históricas se calculan hasta el final del período seleccionado, sin mirar conexiones posteriores.
+El radar usa el período y el jugador elegidos; los filtros de juego y actividad solo afectan a las estadísticas de debajo. Así, filtrar por un juego no convierte falsamente en ausente a quien jugó otro. La última visita se calcula con tramos en voz hasta el final del período seleccionado, sin mirar conexiones posteriores ni tomar presencia online como asistencia.
 
 “Sin registros” no demuestra una ausencia voluntaria. Invisible, permisos y cortes del bot dejan huecos. Sin calendario de encuentros pactados, no se inventa una tasa de faltazos. Juego + voz tampoco confirma que compartieran la misma partida.
 
@@ -43,7 +43,7 @@ Con Python 3.12 o superior, desde esta carpeta:
 python -m http.server 8000 --directory dist
 ```
 
-Abrir `http://localhost:8000`. No abrir `index.html` directamente con `file://`, porque usa módulos JavaScript. Pulsar **Ver mis datos** para empezar un historial vacío, o **Registrar sesión** para crear el primero. La muestra permanece disponible por separado.
+Abrir `http://localhost:8000`. No abrir `index.html` directamente con `file://`, porque usa módulos JavaScript. El tablero abre con tus datos reales; si no hay historial, muestra una lista vacía. Usar **Agregar integrante** para crear la lista manual o **Registrar sesión** para crear el primer registro. La muestra solo aparece al pulsar **Ver muestra ficticia**.
 
 Los datos locales se guardan por origen del sitio. Un cambio de dominio no mueve esos datos: exportar el JSON e importarlo en el nuevo dominio. Borrar los datos del navegador también borra el historial local; hacer respaldos periódicos.
 
@@ -52,10 +52,10 @@ Los datos locales se guardan por origen del sitio. Un cambio de dominio no mueve
 1. Descargar la versión actualizada del proyecto y subir sus archivos descomprimidos a GitHub. En la raíz deben quedar `server.py`, `storage.py`, `requirements.txt`, `render.yaml` y `dist/`. No subir credenciales.
 2. Crear una cuenta en [Supabase](https://supabase.com/) y un proyecto **Free**. Elegir una región cercana a la del servicio Render y guardar la contraseña de la base.
 3. Cuando el proyecto esté listo, abrir **Connect** y elegir **Session pooler**. Copiar su conexión PostgreSQL y reemplazar `[YOUR-PASSWORD]` con la contraseña real. Si tiene caracteres reservados, codificarlos para URL. No usar la API key ni la URL web del proyecto.
-4. En Render: **New → Blueprint**, conectar el repositorio y seleccionar el `render.yaml` de la raíz. Debe proponer **Free** y no incluir discos ni servicios de base de datos de Render.
+4. En Render: **New → Web Service**, conectar el repositorio, elegir **Python 3** y el plan **Free**. Build Command: `pip install -r requirements.txt`. Start Command: `python server.py`. No agregar discos ni una base de datos paga de Render. Si Blueprint pide facturación, usar esta creación manual.
 5. Completar las variables solicitadas: `DATABASE_URL` con la conexión del paso 3, `DISCORD_TOKEN` con el token del bot y `DISCORD_GUILD_ID` con el ID del servidor.
-6. Render genera `ADMIN_KEY` automáticamente y fija `REQUIRE_DATABASE_URL=true`. Revisar que no se agregaron recursos pagos y desplegar.
-7. Abrir la URL HTTPS del servicio Render, elegir **Ver mis datos** y verificar **Bot conectado** en Datos e integración. Las tablas se crean automáticamente en el esquema privado `vicio`; no hace falta pegar SQL en Supabase ni exponer ese esquema en su Data API.
+6. Agregar `ADMIN_KEY` con una cadena aleatoria de al menos 24 caracteres y `REQUIRE_DATABASE_URL=true`. Revisar que el servicio esté en Free y desplegar. En la alternativa con Blueprint, esas dos variables ya están declaradas en `render.yaml`.
+7. Abrir la URL HTTPS del servicio Render y verificar **Bot conectado** en Datos e integración. Las tablas se crean automáticamente en el esquema privado `vicio`; no hace falta pegar SQL en Supabase ni exponer ese esquema en su Data API.
 8. Copiar `ADMIN_KEY` desde Environment del servicio e ingresarla en **Datos e integración → Clave de administración** para editar integrantes y datos manuales.
 
 El pooler en modo sesión permite conectarse por IPv4 sin contratar el complemento IPv4 de Supabase. El backend usa TLS por defecto, transacciones atómicas e identificadores parametrizados. Las credenciales quedan en Render y nunca se envían al navegador ni se agregan al repositorio.
@@ -72,7 +72,7 @@ Si Supabase está pausado, reanudarlo en su panel y reiniciar el servicio de Ren
 
 ### Llevar registros locales al servidor
 
-Exportar el JSON desde el dominio anterior. Abrir la URL de Render, guardar la clave e importar el archivo. No importar datos de muestra. Si ya había registros locales en el mismo origen, el dashboard evita cambiarlos por datos remotos automáticamente: exportarlos, abrir la URL en otro perfil de navegador y luego importar al servidor.
+Exportar el JSON desde el dominio anterior. Abrir la URL de Render, guardar la clave e importar el archivo. No importar datos de muestra. Si ya había registros o integrantes locales en el mismo origen, el tablero muestra Discord y conserva los anteriores en el navegador. Descargar **Datos e integración → Descargar respaldo local pendiente** e importar ese JSON con la clave de administración para migrarlos. La muestra ficticia nunca se mezcla con los datos reales.
 
 ## Crear el bot de Discord
 
@@ -82,7 +82,7 @@ Exportar el JSON desde el dominio anterior. Abrir la URL de Render, guardar la c
 4. Invitar la aplicación al servidor usando el alcance `bot`. Dar acceso de visualización a los canales que se quieran observar. No solicita ni envía mensajes.
 5. Activar el modo desarrollador de Discord, copiar el ID del servidor y guardarlo como `DISCORD_GUILD_ID`.
 6. Opcional: definir `WATCH_USER_IDS` con IDs de miembros separados por coma. Vacío observa todos los miembros humanos del servidor configurado; los bots se excluyen. Para un grupo chico, es útil dejar una lista explícita.
-7. Reiniciar/desplegar el servicio. En **Datos e integración** debe aparecer **Bot conectado**. El resumen real mostrará **Ahora en el club**.
+7. Reiniciar/desplegar el servicio. En **Datos e integración** debe aparecer **Bot conectado**. El resumen real mostrará **Ahora en voz**.
 
 El historial comienza cuando el bot está funcionando. Discord no entrega un año anterior de presencia y juegos. Si Discord no informa una actividad, no podemos asegurar que la persona no está jugando. Invisible se ve desconectado; si la persona está en voz, podemos observar esa presencia en voz, pero su estado visible puede seguir siendo offline.
 
@@ -151,7 +151,7 @@ El bot divide el tramo cuando cambia algún estado y lo persiste cada minuto. Lo
 
 En modo manual, cada carga es una sesión. Cargar un tramo por actividad sin superponerlos. Los registros manuales y automáticos de un mismo ID de jugador no pueden superponerse; la anotación de habla modifica el registro existente. Al migrar nombres manuales a miembros Discord, el ID manual y el ID de Discord son identidades diferentes: unificar IDs en el respaldo antes de importar si se desea una sola ficha histórica.
 
-Las métricas suman horas-persona. Cuatro personas jugando juntas una hora son cuatro horas de juego. Los intervalos se recortan al rango seleccionado, incluso si cruzan medianoche. Los gráficos y las fichas respetan todos los filtros; «Ahora en el club» muestra el estado actual sin filtros de historial.
+Las métricas principales usan solo tramos en voz y suman horas-persona. El Historial permite consultar también los tramos fuera de voz. Cuatro personas jugando juntas una hora son cuatro horas de juego. Los intervalos se recortan al rango seleccionado, incluso si cruzan medianoche. Los gráficos y las fichas respetan todos los filtros; «Ahora en el club» muestra el estado actual sin filtros de historial.
 
 No se elimina automáticamente el historial al cumplir un año. Se conserva mientras exista la base, con límite de 100.000 tramos por carga del dashboard/importación. Para grupos grandes o varios años, agregar consultas paginadas y agregaciones en el backend. El bot está pensado para un servidor pequeño/mediano y una sola instancia del proceso, usando SQLite en local o PostgreSQL externo en Render Free.
 
@@ -164,7 +164,7 @@ No se elimina automáticamente el historial al cumplir un año. Se conserva mien
 
 ## Comprobar el proyecto
 
-Node 20+ para las pruebas del modelo; Python y dependencias para las pruebas del backend:
+Node 20+ para las pruebas del modelo; Python y dependencias para las pruebas del backend. Instalar `python -m pip install -r requirements-dev.txt` para incluir la validación de todas las consultas con el analizador PostgreSQL de pglast, sin servidor ni credenciales:
 
 ```bash
 npm test

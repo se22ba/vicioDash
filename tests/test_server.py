@@ -65,6 +65,18 @@ class StorageTests(unittest.TestCase):
         o.flush("1", now+timedelta(minutes=40))
         self.assertEqual(len({r["sessionId"] for r in self.store.all()}), 2)
 
+    def test_live_club_excludes_online_outside_voice_but_keeps_muted_invisible(self):
+        observer = Observer(self.store)
+        observer.connected = True
+        now = utcnow()
+        observer.change("online", dict(userId="online", name="Solo online", inVoice=False), now)
+        observer.change("voice", dict(userId="voice", name="En voz", inVoice=True,
+                                     muted=True, status="offline"), now)
+        self.assertEqual([r["userId"] for r in observer.snapshot()], ["voice"])
+        self.assertEqual(len(observer.active), 2)
+        observer.connected = False
+        self.assertEqual(observer.snapshot(), [])
+
     def test_annotation_survives_bot_heartbeat(self):
         o = Observer(self.store)
         now = utcnow() - timedelta(minutes=10)
