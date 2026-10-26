@@ -1,10 +1,10 @@
 export const STATES = {
-  squad: {label:'Juego + voz',color:'#ef3340',short:'En equipo'},
+  squad: {label:'Juego + voz',color:'#ef3340',short:'Juego + voz'},
   solo: {label:'Juego sin voz',color:'#733e46',short:'Por su cuenta'},
-  chat: {label:'Solo charla',color:'#e4c4a5',short:'De sobremesa'},
-  ghost: {label:'Sin juego ni charla',color:'#9a8f9d',short:'Modo fantasma'},
+  chat: {label:'Solo charla',color:'#e4c4a5',short:'Charla'},
+  ghost: {label:'Sin juego ni charla',color:'#9a8f9d',short:'En silencio'},
   quiet: {label:'Voz sin dato de habla',color:'#6c727d',short:'Sin confirmar'},
-  lobby: {label:'Conectado sin voz',color:'#454850',short:'Fuera del club'}
+  lobby: {label:'Conectado sin voz',color:'#454850',short:'Fuera de voz'}
 };
 export const voiceRecords=records=>records.filter(r=>r.inVoice===true);
 export const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
