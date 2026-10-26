@@ -128,13 +128,13 @@ class Store:
             self.db = sqlite3.connect(path)
             self.db.execute("PRAGMA journal_mode=WAL")
             self.db.execute("PRAGMA busy_timeout=5000")
-        self.db.execute("CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, start TEXT NOT NULL, end TEXT NOT NULL, payload TEXT NOT NULL)")
-        self.db.execute("CREATE INDEX IF NOT EXISTS records_user_time ON records(user_id, start, end)")
+        self.db.execute('CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, "start" TEXT NOT NULL, "end" TEXT NOT NULL, payload TEXT NOT NULL)')
+        self.db.execute('CREATE INDEX IF NOT EXISTS records_user_time ON records(user_id, "start", "end")')
         self.db.execute("CREATE TABLE IF NOT EXISTS members (id TEXT PRIMARY KEY, payload TEXT NOT NULL)")
         self.db.commit()
 
     def all(self):
-        return [json.loads(row[0]) for row in self.db.execute("SELECT payload FROM records ORDER BY start DESC")]
+        return [json.loads(row[0]) for row in self.db.execute('SELECT payload FROM records ORDER BY "start" DESC')]
 
     def get(self, record_id):
         row = self.db.execute("SELECT payload FROM records WHERE id=?", (record_id,)).fetchone()
@@ -152,11 +152,11 @@ class Store:
         return m
 
     def _write(self, r):
-        overlap = self.db.execute("SELECT id FROM records WHERE user_id=? AND id<>? AND start<? AND end>? LIMIT 1",
+        overlap = self.db.execute('SELECT id FROM records WHERE user_id=? AND id<>? AND "start"<? AND "end">? LIMIT 1',
                                   (r["userId"], r["id"], r["end"], r["start"])).fetchone()
         if overlap:
             raise ValueError("Hay tramos superpuestos para " + r["name"] + ". Revisá los horarios.")
-        self.db.execute("INSERT INTO records VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET user_id=excluded.user_id,start=excluded.start,end=excluded.end,payload=excluded.payload",
+        self.db.execute('INSERT INTO records VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET user_id=excluded.user_id,"start"=excluded."start","end"=excluded."end",payload=excluded.payload',
                         (r["id"], r["userId"], r["start"], r["end"], json.dumps(r, ensure_ascii=False)))
 
     def put(self, record):
