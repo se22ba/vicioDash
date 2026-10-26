@@ -50,8 +50,8 @@ def validate(record):
         raise ValueError("Dato de habla inválido.")
     if record.get("status") not in ["online", "idle", "dnd", "offline"]:
         raise ValueError("Presencia inválida.")
-    if record.get("source") not in ["manual", "bot"]:
-        raise ValueError("Solo se aceptan datos reales, de origen manual o bot.")
+    if record.get("source") != "bot":
+        raise ValueError("Los registros solo pueden ser creados por el bot.")
     result.update(spoke=record["spoke"] if record["inVoice"] else "unknown",
                   status=record["status"], source=record["source"])
     for key, limit in [("channel", 100), ("note", 500), ("sessionId", 120)]:
@@ -168,11 +168,27 @@ class Store:
 
     def put_member(self, member, discover=False):
         m = validate_member(member)
-        if discover and self.db.execute("SELECT 1 FROM members WHERE id=?", (m["id"],)).fetchone():
-            return
+        if discover:
+            row = self.db.execute("SELECT payload FROM members WHERE id=?", (m["id"],)).fetchone()
+            previous = json.loads(row[0]) if row else None
+            if previous:
+                if previous["name"] == m["name"]:
+                    return previous
+                m = {**previous, "name": m["name"]}
         with self.db:
             self.db.execute("INSERT INTO members VALUES (?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", (m["id"], json.dumps(m, ensure_ascii=False)))
         return m
+
+    def set_member_active(self, member_id, active):
+        if not member_id.isdecimal() or type(active) is not bool:
+            raise ValueError("Integrante inválido.")
+        with self.db:
+            row = self.db.execute("SELECT payload FROM members WHERE id=?", (member_id,)).fetchone()
+            if not row:
+                raise ValueError("El integrante no está en Discord.")
+            member = {**json.loads(row[0]), "active": active}
+            self.db.execute("UPDATE members SET payload=? WHERE id=?", (json.dumps(member, ensure_ascii=False), member_id))
+        return member
 
     def _write(self, r):
         overlap = self.db.execute('SELECT id FROM records WHERE user_id=? AND id<>? AND "start"<? AND "end">? LIMIT 1',

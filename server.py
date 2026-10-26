@@ -1,4 +1,4 @@
-"""One process: dashboard + authenticated manual API + optional Discord observer."""
+"""One process: dashboard + administration API + Discord-only activity writer."""
 import asyncio
 import hmac
 import logging
@@ -43,12 +43,10 @@ class Observer:
         active = self.active.get(user_id)
         if not active or (now - active["start"]).total_seconds() < 1:
             return
-        # Heartbeats only extend the interval; they preserve a manual speech annotation.
-        existing = self.store.get(active["id"])
         self.mic.tick(now)
         r = {**active["state"], "id": active["id"], "sessionId": active["sessionId"],
              "start": stamp(active["start"]), "end": stamp(now),
-             "spoke": existing["spoke"] if existing else "unknown", "source": "bot", "note": ""}
+             "spoke": "unknown", "source": "bot", "note": ""}
         mic = self.mic.value(active, now)
         if mic:
             r["mic"] = mic
@@ -73,9 +71,6 @@ class Observer:
         return [{**a["state"], "start": stamp(a["start"])} for a in self.active.values()
                 if a["state"].get("inVoice") is True] if self.connected else []
 
-    def blocks(self, r):
-        active = self.active.get(r["userId"])
-        return active and parse(r["end"]) > active["start"] and parse(r["start"]) < utcnow()
 
 
 async def discord_loop(observer):
@@ -196,7 +191,7 @@ def create_app(db_path=None, admin_key=None, enable_bot=True):
             if request.path.startswith("/api/") and request.method != "GET":
                 supplied = request.headers.get("Authorization", "").removeprefix("Bearer ")
                 if not hmac.compare_digest(supplied.encode(), admin_key.encode()):
-                    return web.json_response({"error": "Clave incorrecta o ausente. Guardala en Datos e integración."}, status=401)
+                    return web.json_response({"error": "Clave de administración incorrecta o ausente."}, status=401)
             response = await handler(request)
         except (ValueError, KeyError, TypeError) as error:
             response = web.json_response({"error": str(error)}, status=400)
@@ -214,7 +209,7 @@ def create_app(db_path=None, admin_key=None, enable_bot=True):
     app[web.AppKey("observer", Observer)] = observer
 
     async def state(request):
-        return web.json_response({"version": 1, "records": store.all(), "members": store.members(), "live": observer.snapshot(),
+        return web.json_response({"version": 1, "records": [r for r in store.all() if r["source"] == "bot"], "members": [m for m in store.members() if m["id"].isdecimal()], "live": observer.snapshot(),
                                   "bot": {"connected": observer.connected, "lastSeen": observer.last_seen},
                                   "voice": observer.voice.snapshot()})
 
@@ -228,42 +223,15 @@ def create_app(db_path=None, admin_key=None, enable_bot=True):
     async def health(request):
         return web.json_response({"ok": True, "botConnected": observer.connected})
 
-    async def put_member(request):
-        member = await request.json()
-        if member.get("id") != request.match_info["id"]:
-            raise ValueError("Identificador inválido.")
-        return web.json_response({"member": store.put_member(member)})
-
-    async def put(request):
-        r = await request.json()
-        if r.get("id") != request.match_info["id"] or r.get("source") != "manual":
-            raise ValueError("Identificador u origen inválido.")
-        existing = store.get(r["id"])
-        if existing and existing["source"] != "manual":
-            raise ValueError("Para registros del bot, usá la corrección de habla.")
-        if observer.blocks(r):
-            raise ValueError("El bot está observando a este jugador. No se puede superponer un tramo manual.")
-        return web.json_response({"record": store.put(r)})
-
-    async def annotate(request):
-        r = await request.json()
-        return web.json_response({"record": store.annotate(request.match_info["id"], r.get("spoke"))})
-
-    async def delete(request):
-        existing = store.get(request.match_info["id"])
-        if not existing or existing["source"] != "manual":
-            raise ValueError("Solo se pueden eliminar registros manuales.")
-        store.delete(request.match_info["id"])
+    async def admin_session(request):
         return web.json_response({"ok": True})
 
-    async def import_data(request):
+    async def pause_member(request):
         data = await request.json()
-        if data.get("version") != 1 or not isinstance(data.get("records"), list):
-            raise ValueError("Formato de respaldo inválido.")
-        for r in data["records"]:
-            if observer.blocks(r):
-                raise ValueError("Hay tramos que se superponen con una observación en curso. Pausá el bot antes de importar.")
-        return web.json_response({"added": store.import_records(data["records"], data.get("members", []))})
+        if not isinstance(data, dict) or set(data) != {"active"} or type(data["active"]) is not bool:
+            raise ValueError("Solo se puede cambiar la pausa del integrante.")
+        member = store.set_member_active(request.match_info["id"], data["active"])
+        return web.json_response({"member": member})
 
     async def index(request):
         return web.FileResponse(ROOT / "dist" / "index.html")
@@ -271,11 +239,8 @@ def create_app(db_path=None, admin_key=None, enable_bot=True):
     app.router.add_get("/api/state", state)
     app.router.add_get("/api/health", health)
     app.router.add_put("/api/voice-channel", configure_voice)
-    app.router.add_put("/api/members/{id}", put_member)
-    app.router.add_put("/api/records/{id}", put)
-    app.router.add_patch("/api/records/{id}/speech", annotate)
-    app.router.add_delete("/api/records/{id}", delete)
-    app.router.add_post("/api/import", import_data)
+    app.router.add_post("/api/admin/session", admin_session)
+    app.router.add_patch("/api/members/{id}", pause_member)
     app.router.add_get("/", index)
     app.router.add_static("/", ROOT / "dist", show_index=False)
 

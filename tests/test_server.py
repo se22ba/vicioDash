@@ -26,7 +26,7 @@ def record(**changes):
     end = utcnow() - timedelta(hours=2)
     r = dict(id="one", userId="1", name="Jugador", start=stamp(end-timedelta(hours=1)),
              end=stamp(end), game="Juego", inVoice=True, spoke="unknown", muted=False,
-             deafened=False, streaming=False, camera=False, status="online", source="manual",
+             deafened=False, streaming=False, camera=False, status="online", source="bot",
              sessionId="session", channel="Club", note="")
     return {**r, **changes}
 
@@ -43,6 +43,11 @@ class StorageTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.put({**r, "id": "two"})
         self.assertEqual(len(self.store.all()), 1)
+
+    def test_new_manual_records_are_rejected_by_storage(self):
+        with self.assertRaises(ValueError):
+            self.store.put(record(source="manual"))
+        self.assertEqual(self.store.all(), [])
 
     def test_import_is_atomic_and_duplicates_are_idempotent(self):
         r = self.store.put(record())
@@ -77,7 +82,7 @@ class StorageTests(unittest.TestCase):
         observer.connected = False
         self.assertEqual(observer.snapshot(), [])
 
-    def test_annotation_survives_bot_heartbeat(self):
+    def test_bot_heartbeat_does_not_accept_a_manual_speech_annotation(self):
         o = Observer(self.store)
         now = utcnow() - timedelta(minutes=10)
         state = {k:v for k,v in record().items() if k not in ["id", "sessionId", "start", "end", "source", "spoke", "note"]}
@@ -86,7 +91,7 @@ class StorageTests(unittest.TestCase):
         record_id = o.active["1"]["id"]
         self.store.annotate(record_id, "no")
         o.flush("1", now+timedelta(minutes=5))
-        self.assertEqual(self.store.get(record_id)["spoke"], "no")
+        self.assertEqual(self.store.get(record_id)["spoke"], "unknown")
 
     def test_roster_includes_members_without_activity_and_preserves_pause(self):
         m = dict(id="offline", name="Sin conexión", since=stamp(utcnow()), active=False)
@@ -109,34 +114,58 @@ class ApiTests(AioHTTPTestCase):
     def auth(self):
         return {"Authorization": "Bearer test-key-with-at-least-24-characters"}
 
-    async def test_write_requires_admin_and_read_works(self):
-        r = record()
-        response = await self.client.put("/api/records/one", json=r)
-        self.assertEqual(response.status, 401)
-        response = await self.client.put("/api/records/one", json=r, headers=self.auth)
-        self.assertEqual(response.status, 200)
-        response = await self.client.get("/api/state")
-        data = await response.json()
-        self.assertEqual(len(data["records"]), 1)
-        self.assertFalse(data["bot"]["connected"])
-        response = await self.client.delete("/api/records/one", headers=self.auth)
-        self.assertEqual(response.status, 200)
+    @property
+    def store(self):
+        return next(v for v in self.app.values() if isinstance(v, Store))
 
-    async def test_overlap_rejected_by_api(self):
-        r = record()
-        await self.client.put("/api/records/one", json=r, headers=self.auth)
-        response = await self.client.put("/api/records/two", json={**r,"id":"two"}, headers=self.auth)
+    async def test_human_record_endpoints_are_closed_even_with_admin_key(self):
+        saved = self.store.put(record())
+        for headers in ({}, self.auth):
+            for method, path, data in [("PUT", "/api/records/one", saved),
+                                       ("PUT", "/api/records/forged", {**saved, "id": "forged", "source": "bot"}),
+                                       ("DELETE", "/api/records/one", None),
+                                       ("PATCH", "/api/records/one/speech", {"spoke": "yes"}),
+                                       ("POST", "/api/import", {"version": 1, "records": [saved]})]:
+                response = await self.client.request(method, path, json=data, headers=headers)
+                self.assertIn(response.status, (401, 404, 405))
+        self.assertEqual(self.store.get("one"), saved)
+        self.assertIsNone(self.store.get("forged"))
+
+    async def test_bot_records_are_readable_and_legacy_manual_rows_are_not_shown(self):
+        saved = self.store.put(record())
+        # Simulate an old row without exposing an ingestion endpoint.
+        with self.store.db:
+            self.store.db.execute('INSERT INTO records VALUES (?,?,?,?,?)',
+                                  ("legacy", "2", saved["start"], saved["end"], __import__("json").dumps({**saved, "id": "legacy", "userId": "2", "source": "manual"})))
+        data = await (await self.client.get("/api/state")).json()
+        self.assertEqual([r["id"] for r in data["records"]], ["one"])
+        self.assertEqual(len(self.store.all()), 2)
+
+    async def test_pause_requires_key_and_cannot_change_profile_or_create_members(self):
+        member = dict(id="123", name="Integrante", since=stamp(utcnow()), active=True)
+        self.store.put_member(member, discover=True)
+        response = await self.client.patch("/api/members/123", json={"active": False})
+        self.assertEqual(response.status, 401)
+        self.assertTrue(self.store.members()[0]["active"])
+        response = await self.client.patch("/api/members/123", json={"active": False}, headers=self.auth)
+        self.assertEqual(response.status, 200)
+        self.assertEqual((await response.json())["member"], {**member, "active": False})
+        for data in [{"active": True, "name": "Changed"}, {"active": "false"}, {"name": "Changed"}]:
+            response = await self.client.patch("/api/members/123", json=data, headers=self.auth)
+            self.assertEqual(response.status, 400)
+        response = await self.client.patch("/api/members/999", json={"active": True}, headers=self.auth)
         self.assertEqual(response.status, 400)
+        response = await self.client.put("/api/members/999", json={**member, "id": "999"}, headers=self.auth)
+        self.assertIn(response.status, (404, 405))
+        self.store.put_member({**member, "name": "Nombre de Discord"}, discover=True)
+        self.assertFalse(self.store.members()[0]["active"])
+        self.assertEqual(self.store.members()[0]["name"], "Nombre de Discord")
 
-    async def test_roster_write_requires_key_and_roundtrips_zero_activity(self):
-        member = dict(id="offline", name="Nunca vino", since=stamp(utcnow()), active=True)
-        response = await self.client.put("/api/members/offline", json=member)
+    async def test_admin_key_is_checked_before_the_ui_saves_it(self):
+        response = await self.client.post("/api/admin/session", headers={"Authorization": "Bearer incorrecta"})
         self.assertEqual(response.status, 401)
-        response = await self.client.put("/api/members/offline", json=member, headers=self.auth)
+        response = await self.client.post("/api/admin/session", headers=self.auth)
         self.assertEqual(response.status, 200)
-        state = await (await self.client.get("/api/state")).json()
-        self.assertEqual(state["members"][0]["name"], "Nunca vino")
-        self.assertEqual(state["records"], [])
 
     async def test_only_static_assets_are_served(self):
         self.assertEqual((await self.client.get("/")).status, 200)

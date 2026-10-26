@@ -57,7 +57,7 @@ class MeterTests(unittest.TestCase):
         self.meter.pulse("1", 7, 12, 2920, utcnow() - timedelta(seconds=10))
         self.assertAlmostEqual(self.meter.totals[active["id"]][1], .04)
 
-    def test_metrics_survive_flush_and_manual_speech_annotation(self):
+    def test_metrics_survive_flush_without_adopting_manual_speech(self):
         self.meter.tick(self.now + timedelta(seconds=1))
         self.observer.flush("1", self.now + timedelta(seconds=1))
         active = self.observer.active["1"]
@@ -66,7 +66,7 @@ class MeterTests(unittest.TestCase):
         saved = self.store.get(active["id"])
         self.assertEqual(saved["mic"]["observedSeconds"], 2)
         self.assertEqual(saved["mic"]["activeSeconds"], 0)
-        self.assertEqual(saved["spoke"], "yes")
+        self.assertEqual(saved["spoke"], "unknown")
 
     def test_header_parser_exposes_only_scalars_and_rejects_video_rtcp_and_unknown_streams(self):
         packet = struct.pack("!BBHII", 0x80, 0x78, 42, 48000, 7) + b"not-stored-audio"

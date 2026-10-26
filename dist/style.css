@@ -31,3 +31,5 @@ nav button.active{background:#de293e;color:#fff;box-shadow:3px 3px 0 #451823;bor
 .rail-note p.kb-note{font-size:27px;line-height:1.08;letter-spacing:.1px}
 
 .voice-channel-label{display:block;max-width:480px;margin:20px 0;font:11px var(--mono)}.voice-channel-label select{display:block;width:100%;margin:9px 0 18px;padding:12px;background:#121318;border:1px solid #57404a}.microphone-panel .panel-head{flex-wrap:wrap}.microphone-panel .section-title{margin-top:8px}.microphone-panel td{font-size:11px}
+
+#member-token-row{display:block;margin:20px 0 0;font-size:12px}#member-token{display:block;width:100%;margin-top:8px;padding:11px;background:#121318;border:1px solid var(--line)}#member-error,#admin-error{margin-top:15px}
