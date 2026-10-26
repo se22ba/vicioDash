@@ -48,10 +48,12 @@ class Observer:
 
     def pause(self):
         now = utcnow()
-        for user_id in list(self.active):
-            self.flush(user_id, now)
-        self.active.clear()
-        self.connected = False
+        try:
+            for user_id in list(self.active):
+                self.flush(user_id, now)
+        finally:
+            self.active.clear()
+            self.connected = False
 
     def snapshot(self):
         return [{**a["state"], "start": stamp(a["start"])} for a in self.active.values()] if self.connected else []
@@ -132,12 +134,21 @@ async def discord_loop(observer):
     async def heartbeat():
         while True:
             await asyncio.sleep(60)
-            if observer.connected and client.is_ready():
+            if not client.is_ready():
+                continue
+            try:
+                if not observer.connected:
+                    await sync()
                 observer.last_seen = stamp(utcnow())
                 guild = client.get_guild(guild_id)
                 if guild:
                     for member in guild.members:
                         update(member)
+            except Exception:
+                # Do not fabricate continuous attendance while storage is unavailable.
+                observer.active.clear()
+                observer.connected = False
+                LOG.exception("Almacenamiento no disponible. Se reintentará la observación en un minuto.")
 
     task = asyncio.create_task(heartbeat())
     try:
@@ -153,7 +164,12 @@ def create_app(db_path=None, admin_key=None, enable_bot=True):
     admin_key = admin_key if admin_key is not None else os.environ.get("ADMIN_KEY", "")
     if len(admin_key) < 24:
         raise ValueError("Definí ADMIN_KEY con al menos 24 caracteres antes de iniciar el servidor.")
-    store = Store(db_path or os.environ.get("DATA_PATH", str(ROOT / "data" / "vicio.sqlite")))
+    database_url = os.environ.get("DATABASE_URL", "").strip()
+    if not db_path and os.environ.get("REQUIRE_DATABASE_URL") == "true" and not database_url:
+        raise ValueError("Configurá DATABASE_URL con una base PostgreSQL persistente. Render Free no conserva SQLite.")
+    if database_url and not database_url.startswith(("postgres://", "postgresql://")):
+        raise ValueError("DATABASE_URL debe ser una conexión PostgreSQL, no una API key ni una URL del dashboard.")
+    store = Store(db_path or database_url or os.environ.get("DATA_PATH", str(ROOT / "data" / "vicio.sqlite")))
     observer = Observer(store)
 
     @web.middleware

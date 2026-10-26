@@ -1,4 +1,4 @@
-"""SQLite records. No web or Discord dependency: independently testable."""
+"""Shared record model: SQLite locally, PostgreSQL for durable free hosting."""
 import json
 import sqlite3
 from datetime import datetime, timezone, timedelta
@@ -74,13 +74,60 @@ def validate_member(member):
     return dict(id=member["id"], name=member["name"].strip(), since=stamp(since), active=member["active"])
 
 
+class PostgresConnection:
+    """Keep Store's small DB-API surface and explicit atomic transactions."""
+    def __init__(self, url):
+        self.url = url
+        self.connection = None
+        self.transaction = None
+        self._connect()
+
+    def _connect(self):
+        import psycopg
+        from psycopg.conninfo import conninfo_to_dict
+        options = conninfo_to_dict(self.url)
+        options.setdefault("sslmode", "require")
+        options.setdefault("connect_timeout", 10)
+        self.connection = psycopg.connect(**options, autocommit=True, prepare_threshold=None)
+        self.connection.execute("CREATE SCHEMA IF NOT EXISTS vicio")
+        self.connection.execute("SET search_path TO vicio")
+
+    def execute(self, query, parameters=()):
+        if self.connection.closed:
+            self._connect()
+        if query.startswith("INSERT OR IGNORE INTO"):
+            query = query.replace("INSERT OR IGNORE INTO", "INSERT INTO", 1) + " ON CONFLICT(id) DO NOTHING"
+        return self.connection.execute(query.replace("?", "%s"), parameters)
+
+    def __enter__(self):
+        if self.connection.closed:
+            self._connect()
+        self.transaction = self.connection.transaction()
+        self.transaction.__enter__()
+        return self
+
+    def __exit__(self, *args):
+        transaction, self.transaction = self.transaction, None
+        return transaction.__exit__(*args)
+
+    def commit(self):
+        pass  # Autocommit outside explicit transaction contexts.
+
+    def close(self):
+        self.connection.close()
+
+
 class Store:
     def __init__(self, path):
-        if path != ":memory:":
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(path)
-        self.db.execute("PRAGMA journal_mode=WAL")
-        self.db.execute("PRAGMA busy_timeout=5000")
+        self.postgres = path.startswith(("postgres://", "postgresql://"))
+        if self.postgres:
+            self.db = PostgresConnection(path)
+        else:
+            if path != ":memory:":
+                Path(path).parent.mkdir(parents=True, exist_ok=True)
+            self.db = sqlite3.connect(path)
+            self.db.execute("PRAGMA journal_mode=WAL")
+            self.db.execute("PRAGMA busy_timeout=5000")
         self.db.execute("CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, start TEXT NOT NULL, end TEXT NOT NULL, payload TEXT NOT NULL)")
         self.db.execute("CREATE INDEX IF NOT EXISTS records_user_time ON records(user_id, start, end)")
         self.db.execute("CREATE TABLE IF NOT EXISTS members (id TEXT PRIMARY KEY, payload TEXT NOT NULL)")

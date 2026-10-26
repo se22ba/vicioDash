@@ -25,13 +25,15 @@ Los respaldos JSON ahora incluyen `members`, que conserva también a quienes nun
 - Muestra ficticia de un año, separada del historial real. Los nombres y horas de la muestra no describen actividad real.
 - Backend compartido SQLite y bot de Discord opcional. Estado actual de los miembros observados cuando el bot está conectado.
 
-## Mi elección: Render para el bot
+## Hosting elegido: Render Free + Supabase Free
 
-Para el proyecto completo conviene **un Web Service de Render activo con disco persistente**. El mismo proceso sirve el dashboard, la API y el bot. `render.yaml` ya define el servicio y el disco. Esa configuración usa infraestructura paga: revisar el costo que muestre Render antes de crearla.
+El Blueprint usa **Render Free**, sin disco pago, y una base PostgreSQL externa mediante `DATABASE_URL`. Para conservar historial sin pagar, se puede usar un proyecto **Supabase Free**. Render ejecuta el dashboard, la API y el bot; Supabase conserva registros e integrantes aunque Render se reinicie.
 
-GitHub Pages es una buena alternativa gratis para **carga manual local**. No ejecuta Python ni mantiene el bot conectado. En ese modo cada navegador tiene su propio historial; no hay sincronización automática entre amigos. Publicar el sitio no publica los registros locales de cada visitante.
+La combinación tiene límites: Render Free puede suspenderse después de 15 minutos sin tráfico entrante y sus archivos locales se pierden al reiniciar, redesplegar o suspenderse. Supabase Free tiene 500 MB de base y puede pausarse tras una semana de inactividad. No se garantiza observación continua 24/7. No hay código de auto-ping ni recuperación inventada de actividad perdida.
 
-Un servicio gratuito de Render puede suspenderse; el almacenamiento local sin disco persistente se pierde con reinicios o despliegues. No sirve para garantizar un año de observación continua. No se publica ni contrata ningún servicio de Render al descargar este proyecto.
+`REQUIRE_DATABASE_URL=true` impide que el Blueprint arranque usando accidentalmente SQLite efímero. En una PC, SQLite sigue disponible sin configurar `DATABASE_URL`.
+
+GitHub guarda el código y Render lo ejecuta. GitHub Pages sigue siendo una alternativa para carga manual local, sin bot ni sincronización entre navegadores.
 
 ## Probar sin configurar Discord
 
@@ -45,16 +47,28 @@ Abrir `http://localhost:8000`. No abrir `index.html` directamente con `file://`,
 
 Los datos locales se guardan por origen del sitio. Un cambio de dominio no mueve esos datos: exportar el JSON e importarlo en el nuevo dominio. Borrar los datos del navegador también borra el historial local; hacer respaldos periódicos.
 
-## Publicar en Render
+## Publicar gratis en Render y Supabase
 
-1. Subir el contenido de esta carpeta a un repositorio de GitHub. No subir `.env`, tokens, archivos SQLite ni la carpeta `data`.
-2. En Render: **New → Blueprint**, conectar el repositorio y seleccionar `render.yaml`.
-3. Revisar el plan y el disco persistente que propone. El disco se monta en `/var/data` y la base usa `/var/data/vicio.sqlite`.
-4. Para usar solo carga manual, dejar `DISCORD_TOKEN` y `DISCORD_GUILD_ID` vacíos. Para el bot, configurarlos según el apartado siguiente.
-5. Render genera `ADMIN_KEY`. Copiar esa clave desde las variables de entorno del servicio e ingresarla en **Datos e integración → Clave de administración**. Se conserva en `sessionStorage` de esa pestaña; se envía al backend en el encabezado Authorization, nunca a Discord.
-6. Abrir la URL HTTPS que entregue Render y elegir **Ver mis datos**. El dashboard detecta la API automáticamente. Los datos pasan a ser compartidos entre equipos; las escrituras necesitan la clave.
+1. Descargar la versión actualizada del proyecto y subir sus archivos descomprimidos a GitHub. En la raíz deben quedar `server.py`, `storage.py`, `requirements.txt`, `render.yaml` y `dist/`. No subir credenciales.
+2. Crear una cuenta en [Supabase](https://supabase.com/) y un proyecto **Free**. Elegir una región cercana a la del servicio Render y guardar la contraseña de la base.
+3. Cuando el proyecto esté listo, abrir **Connect** y elegir **Session pooler**. Copiar su conexión PostgreSQL y reemplazar `[YOUR-PASSWORD]` con la contraseña real. Si tiene caracteres reservados, codificarlos para URL. No usar la API key ni la URL web del proyecto.
+4. En Render: **New → Blueprint**, conectar el repositorio y seleccionar el `render.yaml` de la raíz. Debe proponer **Free** y no incluir discos ni servicios de base de datos de Render.
+5. Completar las variables solicitadas: `DATABASE_URL` con la conexión del paso 3, `DISCORD_TOKEN` con el token del bot y `DISCORD_GUILD_ID` con el ID del servidor.
+6. Render genera `ADMIN_KEY` automáticamente y fija `REQUIRE_DATABASE_URL=true`. Revisar que no se agregaron recursos pagos y desplegar.
+7. Abrir la URL HTTPS del servicio Render, elegir **Ver mis datos** y verificar **Bot conectado** en Datos e integración. Las tablas se crean automáticamente en el esquema privado `vicio`; no hace falta pegar SQL en Supabase ni exponer ese esquema en su Data API.
+8. Copiar `ADMIN_KEY` desde Environment del servicio e ingresarla en **Datos e integración → Clave de administración** para editar integrantes y datos manuales.
 
-El dashboard y la lectura de la API son públicos por defecto en Render. Quien visite su URL podrá ver nombres, horarios, juegos y notas. La clave de administración protege las modificaciones, no la lectura. Para un club privado, agregar control de acceso delante del servicio antes de compartir actividad real.
+El pooler en modo sesión permite conectarse por IPv4 sin contratar el complemento IPv4 de Supabase. El backend usa TLS por defecto, transacciones atómicas e identificadores parametrizados. Las credenciales quedan en Render y nunca se envían al navegador ni se agregan al repositorio.
+
+Si ya se había creado el servicio con el Blueprint anterior, verificar manualmente que el plan sea Free y que no quede un disco pago asociado. Los cambios de este ZIP no modifican por sí solos recursos que ya existan en tu cuenta. Respaldar registros antes de cambiar una base existente. La nueva conexión no migra automáticamente los datos SQLite previos: usar exportación/importación JSON con el bot pausado.
+
+El dashboard y la lectura de la API siguen públicos por defecto en Render. La clave de administración protege modificaciones, no lectura. Un repositorio privado en GitHub no vuelve privada la URL de Render.
+
+### Qué ocurre si Render o Supabase se suspenden
+
+Los registros confirmados quedan en PostgreSQL. El bot solo observa mientras el proceso está activo; si se suspende, no registra nuevas conexiones hasta volver a arrancar. Un hueco de observación no prueba que alguien faltó. Abrir el dashboard puede despertar el servicio, pero no permite recuperar actividad anterior.
+
+Si Supabase está pausado, reanudarlo en su panel y reiniciar el servicio de Render si no pudo arrancar. El nivel gratuito no incluye una promesa de continuidad o conservación indefinida: mantener respaldos JSON periódicos, respetar sus cuotas y revisar los avisos del proveedor.
 
 ### Llevar registros locales al servidor
 
@@ -139,7 +153,7 @@ En modo manual, cada carga es una sesión. Cargar un tramo por actividad sin sup
 
 Las métricas suman horas-persona. Cuatro personas jugando juntas una hora son cuatro horas de juego. Los intervalos se recortan al rango seleccionado, incluso si cruzan medianoche. Los gráficos y las fichas respetan todos los filtros; «Ahora en el club» muestra el estado actual sin filtros de historial.
 
-No se elimina automáticamente el historial al cumplir un año. Se conserva mientras exista la base, con límite de 100.000 tramos por carga del dashboard/importación. Para grupos grandes o varios años, agregar consultas paginadas y agregaciones en el backend. El bot está pensado para un servidor pequeño/mediano y una sola instancia del proceso, consistente con SQLite y el disco de Render.
+No se elimina automáticamente el historial al cumplir un año. Se conserva mientras exista la base, con límite de 100.000 tramos por carga del dashboard/importación. Para grupos grandes o varios años, agregar consultas paginadas y agregaciones en el backend. El bot está pensado para un servidor pequeño/mediano y una sola instancia del proceso, usando SQLite en local o PostgreSQL externo en Render Free.
 
 ## Respaldos y exportaciones
 
@@ -158,7 +172,7 @@ npm run check
 python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-No se necesita Node en producción. Se verifican categorías, recorte de intervalos, sumas, sesiones, cambio de mes/año, respaldos, superposiciones, atomicidad de SQLite, continuidad del bot, anotaciones y autorización de la API. El bot necesita un token y servidor reales para una prueba de integración con Discord.
+No se necesita Node en producción. Para ejecutar las mismas pruebas de almacenamiento contra PostgreSQL, definir `VICIO_TEST_DATABASE_URL` apuntando a una base desechable y ejecutar `python -m unittest discover -s tests -p 'test_postgres.py' -v`. La prueba elimina únicamente sus IDs temporales al finalizar; nunca usar credenciales de producción. Se verifican categorías, recorte de intervalos, sumas, sesiones, cambio de mes/año, respaldos, superposiciones, atomicidad de SQLite, continuidad del bot, anotaciones y autorización de la API. El bot necesita un token y servidor reales para una prueba de integración con Discord.
 
 ## Archivos
 
@@ -167,7 +181,7 @@ dist/                   Dashboard estático sin build
 server.py               API + observador Discord opcional
 storage.py              Validación y SQLite
 requirements.txt        Dependencias Python
-render.yaml             Despliegue completo con disco
+render.yaml             Render Free + PostgreSQL externo
 .env.example            Variables documentadas, sin secretos
 .github/workflows/      Publicación manual en Pages
 tests/                  Verificación del modelo y backend
@@ -179,7 +193,8 @@ Las fuentes web son Barlow Condensed, DM Sans e IBM Plex Mono mediante Google Fo
 
 - [GitHub Pages: hosting estático](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages)
 - [Render: límites del servicio gratuito](https://render.com/docs/free)
-- [Render: discos persistentes](https://render.com/docs/disks)
+- [Supabase: plan Free y límites](https://supabase.com/pricing)
+- [Supabase: conexión PostgreSQL y Session pooler](https://supabase.com/docs/guides/database/connecting-to-postgres)
 - [Render: referencia de Blueprints](https://render.com/docs/blueprint-spec)
 - [Discord: Gateway e intents](https://docs.discord.com/developers/events/gateway)
 - [discord.py: intents](https://discordpy.readthedocs.io/en/stable/intents.html)

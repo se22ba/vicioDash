@@ -1,5 +1,6 @@
 import sys
 import unittest
+from unittest.mock import patch
 from datetime import timedelta
 from pathlib import Path
 
@@ -7,6 +8,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from storage import Store, stamp, utcnow
 from server import create_app, Observer
 from aiohttp.test_utils import AioHTTPTestCase
+
+
+class DeploymentConfigTests(unittest.TestCase):
+    def test_free_hosting_fails_closed_without_persistent_database(self):
+        with patch.dict("os.environ", {"REQUIRE_DATABASE_URL": "true", "DATABASE_URL": ""}):
+            with self.assertRaisesRegex(ValueError, "DATABASE_URL"):
+                create_app(admin_key="a-test-admin-key-of-more-than-24-characters", enable_bot=False)
+
+    def test_database_url_does_not_accept_an_api_url(self):
+        with patch.dict("os.environ", {"DATABASE_URL": "https://project.supabase.co"}):
+            with self.assertRaisesRegex(ValueError, "PostgreSQL"):
+                create_app(admin_key="a-test-admin-key-of-more-than-24-characters", enable_bot=False)
 
 
 def record(**changes):
