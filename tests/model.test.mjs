@@ -37,3 +37,24 @@ test('solo los tramos en voz suman al club, incluso con Discord invisible o mute
  assert.equal(result.games[0].name,'Juego en voz');assert.ok(!result.players.some(p=>p.id==='online'));
  assert.equal(records.length,3);
 });
+
+test('el detector distingue silencio observado, cobertura parcial y ausencia de datos',async()=>{
+ const {microphoneSummary}=await import('../dist/model.js');
+ const row={userId:'1',name:'Prueba',inVoice:true,start:'2025-01-01T00:00:00Z',end:'2025-01-01T00:01:00Z'};
+ assert.equal(microphoneSummary([row])[0].state,'unknown');
+ assert.equal(microphoneSummary([{...row,mic:{observedSeconds:60,activeSeconds:0}}])[0].state,'no_activity');
+ assert.equal(microphoneSummary([{...row,mic:{observedSeconds:30,activeSeconds:0}}])[0].state,'partial');
+ assert.equal(microphoneSummary([{...row,mic:{observedSeconds:30,activeSeconds:2}}])[0].state,'activity');
+ const clipped=microphoneSummary([{...row,minutes:.5,mic:{observedSeconds:60,activeSeconds:10}}])[0];
+ assert.equal(clipped.observedSeconds,30);assert.equal(clipped.activeSeconds,5);
+ const mixed=microphoneSummary([row,{...row,mic:{observedSeconds:60,activeSeconds:0}}])[0];
+ assert.equal(mixed.state,'partial');assert.equal(mixed.coverage,.5);
+});
+
+test('el respaldo JSON mantiene las mediciones de micrófono sin transformarlas en habla',async()=>{
+ const {makeDemo,validateImport}=await import('../dist/model.js');
+ const r={...makeDemo().find(r=>r.inVoice),source:'bot',spoke:'unknown',channelId:'99',mic:{kind:'rtp',observedSeconds:30,activeSeconds:4}};
+ const [restored]=validateImport(JSON.parse(JSON.stringify({version:1,records:[r]})));
+ assert.deepEqual(restored.mic,r.mic);assert.equal(restored.spoke,'unknown');assert.equal(restored.channelId,'99');
+ assert.throws(()=>validateImport({version:1,records:[{...r,mic:{kind:'rtp',observedSeconds:1,activeSeconds:3}}]}));
+});

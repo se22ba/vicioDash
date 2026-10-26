@@ -1,5 +1,6 @@
 """Shared record model: SQLite locally, PostgreSQL for durable free hosting."""
 import json
+import math
 import sqlite3
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -60,6 +61,19 @@ def validate(record):
         result[key] = value.strip()
     if not result["inVoice"]:
         result.update(channel="", muted=False, deafened=False, streaming=False, camera=False)
+    if "channelId" in record:
+        channel_id = record["channelId"]
+        if not isinstance(channel_id, str) or (channel_id and not channel_id.isdecimal()):
+            raise ValueError("Canal inválido.")
+        result["channelId"] = channel_id if result["inVoice"] else ""
+    if "mic" in record:
+        mic = record["mic"]
+        if not result["inVoice"] or not isinstance(mic, dict) or mic.get("kind") != "rtp":
+            raise ValueError("Medición de micrófono inválida.")
+        observed, active = mic.get("observedSeconds"), mic.get("activeSeconds")
+        if any(type(v) not in (int, float) or not math.isfinite(v) for v in (observed, active)) or not 0 <= active <= observed <= (end-start).total_seconds() + .01:
+            raise ValueError("Duración de micrófono inválida.")
+        result["mic"] = dict(kind="rtp", observedSeconds=observed, activeSeconds=active)
     return result
 
 
@@ -131,7 +145,16 @@ class Store:
         self.db.execute('CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, "start" TEXT NOT NULL, "end" TEXT NOT NULL, payload TEXT NOT NULL)')
         self.db.execute('CREATE INDEX IF NOT EXISTS records_user_time ON records(user_id, "start", "end")')
         self.db.execute("CREATE TABLE IF NOT EXISTS members (id TEXT PRIMARY KEY, payload TEXT NOT NULL)")
+        self.db.execute("CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY, value TEXT NOT NULL)")
         self.db.commit()
+
+    def setting(self, key, default=""):
+        row = self.db.execute("SELECT value FROM settings WHERE id=?", (key,)).fetchone()
+        return row[0] if row else default
+
+    def set_setting(self, key, value):
+        with self.db:
+            self.db.execute("INSERT INTO settings VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value", (key, value))
 
     def all(self):
         return [json.loads(row[0]) for row in self.db.execute('SELECT payload FROM records ORDER BY "start" DESC')]

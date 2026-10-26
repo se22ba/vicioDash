@@ -198,3 +198,14 @@ Las fuentes web son Barlow Condensed, DM Sans e IBM Plex Mono mediante Google Fo
 - [Render: referencia de Blueprints](https://render.com/docs/blueprint-spec)
 - [Discord: Gateway e intents](https://docs.discord.com/developers/events/gateway)
 - [discord.py: intents](https://discordpy.readthedocs.io/en/stable/intents.html)
+
+
+## Detector de micrófono en el canal fijo
+
+En **Datos e integración**, guardar primero la clave de administración existente. En **Detector de micrófono**, elegir el canal habitual y pulsar **Guardar canal y aplicar**. El bot se une visible, con su micrófono muteado y sin ensordecerse. Necesita los permisos Ver canal y Conectar; si el canal está lleno, liberar un lugar. Elegir **Desactivado** detiene la medición. La elección se guarda en PostgreSQL y sobrevive a redeploys; `VOICE_CHANNEL_ID` sirve como valor inicial opcional.
+
+El panel del detector muestra tiempo dentro de voz, tiempo realmente observado, cobertura y segundos aproximados de transmisión de micrófono. No almacena, descifra ni reproduce audio: solo inspecciona identificadores y marcas de tiempo de cabeceras RTP de usuarios del canal elegido. Música, ruido y breves paquetes de silencio pueden sumar actividad; no es una prueba de palabras habladas. El dato manual «habló» sigue separado y no se sobrescribe.
+
+Los períodos sin conexión, otros canales, sesiones previas y pausas del proceso quedan sin medición. Cero segundos no se presenta como ausencia de actividad si falta cobertura del tramo. Los contadores de un tramo parcialmente incluido en el filtro de fechas se prorratean y se muestran como aproximados. Los respaldos JSON preservan esos contadores; la configuración del canal queda en el servidor.
+
+La recepción usa un adaptador pequeño sobre hooks internos de **discord.py 2.7.1**, fijada con extras de voz (PyNaCl y davey para DAVE). No usar extensiones antiguas sin soporte del cifrado actual. Revisar las pruebas del adaptador antes de actualizar esa versión. No requiere FFmpeg ni transcripción. Si Render no permite completar la conexión UDP, el dashboard conserva la presencia y muestra el error del detector; no fabrica actividad ni silencio. El funcionamiento real se verifica después de elegir el canal y transmitir desde dos cuentas. Render Free sigue sujeto a suspensiones y huecos.

@@ -143,6 +143,24 @@ class ApiTests(AioHTTPTestCase):
         self.assertEqual((await self.client.get("/model.js")).status, 200)
         self.assertEqual((await self.client.get("/server.py")).status, 404)
 
+    async def test_microphone_configuration_requires_key_and_accepts_only_discovered_channel(self):
+        response = await self.client.put("/api/voice-channel", json={"channelId": "99"})
+        self.assertEqual(response.status, 401)
+        response = await self.client.put("/api/voice-channel", json={"channelId": "99"}, headers=self.auth)
+        self.assertEqual(response.status, 400)
+        response = await self.client.put("/api/voice-channel", json=[], headers=self.auth)
+        self.assertEqual(response.status, 400)
+        observer = next(v for v in self.app.values() if isinstance(v, Observer))
+        observer.voice.channels = [dict(id="99", name="El after")]
+        response = await self.client.put("/api/voice-channel", json={"channelId": "99"}, headers=self.auth)
+        self.assertEqual(response.status, 200)
+        state = await (await self.client.get("/api/state")).json()
+        self.assertEqual(state["voice"]["channelId"], "99")
+        self.assertEqual(state["voice"]["status"], "waiting")
+        response = await self.client.put("/api/voice-channel", json={"channelId": ""}, headers=self.auth)
+        self.assertEqual(response.status, 200)
+        self.assertFalse((await response.json())["voice"]["connected"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -27,7 +27,17 @@ export function validateRecord(r){
  out.sessionId=typeof r.sessionId==='string'?r.sessionId.slice(0,120):out.id;
  out.spoke=r.inVoice?r.spoke:'unknown';out.status=r.status;out.source=r.source;
  if(!out.inVoice){out.muted=false;out.deafened=false;out.streaming=false;out.camera=false;out.channel=''}
+ if(r.channelId!==undefined){if(typeof r.channelId!=='string'||(r.channelId&&!/^\d+$/.test(r.channelId)))throw Error('Canal inválido.');out.channelId=out.inVoice?r.channelId:''}
+ if(r.mic!==undefined){const m=r.mic,duration=(Date.parse(out.end)-Date.parse(out.start))/1000;if(!out.inVoice||!m||m.kind!=='rtp'||typeof m.observedSeconds!=='number'||typeof m.activeSeconds!=='number'||!Number.isFinite(m.observedSeconds)||!Number.isFinite(m.activeSeconds)||m.activeSeconds<0||m.activeSeconds>m.observedSeconds||m.observedSeconds>duration+.01)throw Error('Medición de micrófono inválida.');out.mic={kind:'rtp',observedSeconds:m.observedSeconds,activeSeconds:m.activeSeconds}}
  return out;
+}
+export function microphoneSummary(records){
+ const users=new Map();
+ for(const r of records){if(!r.inVoice)continue;const duration=(Date.parse(r.end)-Date.parse(r.start))/1000,seconds=r.minutes===undefined?duration:r.minutes*60,weight=duration>0?seconds/duration:0;
+  if(!users.has(r.userId))users.set(r.userId,{id:r.userId,name:r.name,voiceSeconds:0,observedSeconds:0,activeSeconds:0});
+  const p=users.get(r.userId);p.voiceSeconds+=seconds;if(r.mic){p.observedSeconds+=r.mic.observedSeconds*weight;p.activeSeconds+=r.mic.activeSeconds*weight}
+ }
+ return [...users.values()].map(p=>({...p,coverage:p.voiceSeconds?p.observedSeconds/p.voiceSeconds:0,state:p.activeSeconds>=.12?'activity':p.observedSeconds>=30&&p.observedSeconds/p.voiceSeconds>=.999999?'no_activity':p.observedSeconds>0?'partial':'unknown'})).sort((a,b)=>a.activeSeconds-b.activeSeconds||a.name.localeCompare(b.name));
 }
 export function validateImport(payload){
  if(payload.version!==1||!Array.isArray(payload.records)||payload.records.length>100000)throw Error('Se necesita un respaldo VICIO versión 1 (máximo 100.000 tramos).');

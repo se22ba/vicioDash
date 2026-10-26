@@ -9,6 +9,7 @@ from pathlib import Path
 
 from aiohttp import web
 from storage import Store, utcnow, stamp, parse
+from microphone import MicMeter, MicController
 
 LOG = logging.getLogger("vicio")
 ROOT = Path(__file__).resolve().parent
@@ -20,6 +21,8 @@ class Observer:
         self.active = {}
         self.connected = False
         self.last_seen = None
+        self.mic = MicMeter(self)
+        self.voice = MicController(self)
 
     def change(self, user_id, state, now=None):
         now = now or utcnow()
@@ -30,6 +33,7 @@ class Observer:
         session_id = previous["sessionId"] if previous else str(uuid.uuid4())
         if previous:
             self.flush(user_id, now)
+            self.mic.forget(previous["id"])
             del self.active[user_id]
         if state is not None:
             self.active[user_id] = dict(id=str(uuid.uuid4()), start=now, sessionId=session_id, state=state)
@@ -41,18 +45,27 @@ class Observer:
             return
         # Heartbeats only extend the interval; they preserve a manual speech annotation.
         existing = self.store.get(active["id"])
+        self.mic.tick(now)
         r = {**active["state"], "id": active["id"], "sessionId": active["sessionId"],
              "start": stamp(active["start"]), "end": stamp(now),
              "spoke": existing["spoke"] if existing else "unknown", "source": "bot", "note": ""}
+        mic = self.mic.value(active, now)
+        if mic:
+            r["mic"] = mic
         self.store.put(r)
 
     def pause(self):
         now = utcnow()
+        self.mic.tick(now)
+        self.connected = False
         try:
             for user_id in list(self.active):
                 self.flush(user_id, now)
         finally:
+            for active in self.active.values():
+                self.mic.forget(active["id"])
             self.active.clear()
+            self.mic.reset_transport()
             self.connected = False
 
     def snapshot(self):
@@ -88,6 +101,7 @@ async def discord_loop(observer):
         observer.change(str(member.id), dict(userId=str(member.id), name=member.display_name[:60],
             game=game, status=str(member.status) if str(member.status) in ["online", "idle", "dnd"] else "offline",
             inVoice=in_voice, channel=voice.channel.name[:100] if in_voice else "",
+            channelId=str(voice.channel.id) if in_voice else "",
             muted=bool(in_voice and (voice.self_mute or voice.mute)),
             deafened=bool(in_voice and (voice.self_deaf or voice.deaf)),
             streaming=bool(in_voice and voice.self_stream), camera=bool(in_voice and voice.self_video)))
@@ -153,11 +167,13 @@ async def discord_loop(observer):
                 LOG.exception("Almacenamiento no disponible. Se reintentará la observación en un minuto.")
 
     task = asyncio.create_task(heartbeat())
+    mic_task = asyncio.create_task(observer.voice.run(client, guild_id))
     try:
         await client.start(os.environ["DISCORD_TOKEN"], reconnect=True)
     finally:
         task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
+        mic_task.cancel()
+        await asyncio.gather(task, mic_task, return_exceptions=True)
         observer.pause()
         await client.close()
 
@@ -199,7 +215,15 @@ def create_app(db_path=None, admin_key=None, enable_bot=True):
 
     async def state(request):
         return web.json_response({"version": 1, "records": store.all(), "members": store.members(), "live": observer.snapshot(),
-                                  "bot": {"connected": observer.connected, "lastSeen": observer.last_seen}})
+                                  "bot": {"connected": observer.connected, "lastSeen": observer.last_seen},
+                                  "voice": observer.voice.snapshot()})
+
+    async def configure_voice(request):
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise ValueError("Configuración inválida.")
+        observer.voice.configure(data.get("channelId"))
+        return web.json_response({"voice": observer.voice.snapshot()})
 
     async def health(request):
         return web.json_response({"ok": True, "botConnected": observer.connected})
@@ -246,6 +270,7 @@ def create_app(db_path=None, admin_key=None, enable_bot=True):
 
     app.router.add_get("/api/state", state)
     app.router.add_get("/api/health", health)
+    app.router.add_put("/api/voice-channel", configure_voice)
     app.router.add_put("/api/members/{id}", put_member)
     app.router.add_put("/api/records/{id}", put)
     app.router.add_patch("/api/records/{id}/speech", annotate)
