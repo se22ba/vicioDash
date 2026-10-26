@@ -200,8 +200,10 @@ def create_app(db_path=None, admin_key=None, enable_bot=True):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
         response.headers["X-Frame-Options"] = "DENY"
-        if request.path.startswith("/api/"):
+        if request.path.startswith("/api/") or request.path == "/":
             response.headers["Cache-Control"] = "no-store"
+        elif request.path.endswith((".js", ".css")):
+            response.headers["Cache-Control"] = "no-cache"
         return response
 
     app = web.Application(middlewares=[boundary], client_max_size=40 * 1024 * 1024)
