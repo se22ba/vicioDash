@@ -4,6 +4,14 @@ Dashboard de actividad de Discord. Los registros los crea únicamente el bot. La
 
 La lista de integrantes se obtiene de Discord. Desde cada integrante se puede pausar o reactivar su inclusión en asistencia. Esa acción requiere la clave de administración y no modifica nombre, fecha de alta ni historial. Los cambios de nombre se actualizan desde Discord y conservan la pausa.
 
+## Ranking Tuts
+
+El resumen abre con un podio y una pegatina de Tuts coronado. Más índice Tuts significa menos participación: 100 − 100 × (0,6 × frecuencia relativa + 0,4 × duración relativa). Frecuencia = días en voz / días de pertenencia dentro del período; duración = minutos en voz / esos días. Cada métrica se divide por el máximo de la banda. Los empates comparten puesto y corona. Sin voz registrada no se corona a nadie.
+
+El ranking usa toda la banda, independientemente de los otros filtros, y permite alternar el período elegido con todo el historial hasta la fecha final. El archivo muestra hasta seis semanas finalizadas recalculadas desde los registros persistidos; no son snapshots de coronaciones. Usa el horario del dispositivo y la lista/pausas actuales. Los miembros con menos de siete días llevan marca provisional. El micrófono sin observar no afecta el puntaje. Los cortes del bot no se recuperan.
+
+La web consulta cada 30 segundos y al volver a la pestaña. Con el bot conectado agrega al cálculo la cola todavía no persistida de la sesión en voz, sin duplicar minutos, y la limita al último heartbeat más 60 segundos. No requiere migración de base de datos.
+
 ## Funciones
 
 - Asistencia por entradas a canales de voz, última visita, días y horas.

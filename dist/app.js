@@ -1,8 +1,10 @@
 import {validateMembers,attendance} from './attendance.js';
+import {tutsRanking,weeklyTuts,historyStart,withLiveVoice} from './tuts.js';
 import {STATES,esc,hours,category,validateImport,bounds,selectRecords,summarize,dailyMinutes,voiceRecords,microphoneSummary} from './model.js';
 
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const KEY='vicio.records.v1';
+let tutsMode='period',tutsUpdated=null,refreshing=false;
 let members=[],local=[],remote=false,remoteState=null,view='resumen',period='month',page=1,recentPage=1,search='',selected=[],summary,range,toastTimer,localBackup=null;
 function resetPages(){page=1;recentPage=1}
 try{const raw=localStorage.getItem(KEY);if(raw){const payload=JSON.parse(raw);localBackup={version:1,dataset:'legacy',records:validateImport(payload),members:validateMembers(payload.members||[])}}}catch{}
@@ -33,7 +35,9 @@ function render(){
  $('#date-line').textContent=`${date(range[0],{year:'numeric'})} — ${date(range[1],{year:'numeric'})}`;
  $('#record-count').textContent=`${plural(selected.length,'TRAMO','TRAMOS')}`;
  $('#data-label').textContent=remoteState?.bot?.connected?'BOT CONECTADO':'BOT DESCONECTADO';$('#data-label').classList.toggle('real',!!remoteState?.bot?.connected);
+ const openDetails=$$('#content details[open]').map(d=>d.className);
  $('#content').innerHTML=({resumen:overview,banda:playersView,juegos:gamesView,historial:historyView,ajustes:settingsView}[view])();
+ for(const d of $$('#content details'))if(openDetails.includes(d.className))d.open=true;
 }
 const attendanceLabels={never:'Sin entradas a voz',missing:'No entró a voz',away:'7+ días sin entrar',present:'Entró a voz',paused:'En pausa',not_started:'Aún no estaba en la lista'};
 function attendancePanel(full=false){
@@ -74,7 +78,18 @@ function micSettings(){
  const v=remoteState?.voice||{},labels={disabled:'DESACTIVADO',waiting:'ESPERANDO CONEXIÓN',connecting:'CONECTANDO',connected:'CONECTADO',error:'ERROR'};
  return `<section class="panel wide-section"><div class="panel-body"><span class="setting-status">${labels[v.status]||'ACTUALIZANDO'}</span><h3 class="section-title">Detector de micrófono</h3><label class="voice-channel-label">Canal de voz<select id="voice-channel"><option value="">Desactivado</option>${(v.channels||[]).map(c=>`<option value="${esc(c.id)}" ${c.id===v.channelId?'selected':''}>${esc(c.name)}</option>`).join('')}${v.channelId&&!(v.channels||[]).some(c=>c.id===v.channelId)?`<option value="${esc(v.channelId)}" selected>Canal no disponible</option>`:''}</select></label><div class="button-row"><button class="primary" id="save-voice">Guardar canal ↗</button><button class="secondary" id="refresh-server">Actualizar ↻</button></div>${v.error?`<div class="error" role="alert">${esc(v.error)}</div>`:''}</div></section>`;
 }
-function overview(){return livePanel()+attendancePanel()+stats()+micPanel()+`<div class="content-grid">${activityChart()}${distribution()}</div><section class="wide-section"><div class="section-heading"><h2 class="section-title">Tiempo por integrante <small>/ TIEMPO EN VOZ</small></h2><button class="link-button" data-view="banda">Toda la banda ↗</button></div>${summary.players.length?`<div class="players-grid">${summary.players.slice(0,4).map(playerCard).join('')}</div>`:`<div class="panel">${empty('No hay sesiones en este período','Registrá una sesión o ajustá los filtros para ver la actividad.',true)}</div>`}</section><div class="bottom-grid"><section class="panel"><div class="panel-head"><h2 class="section-title">Juegos más jugados</h2><button class="link-button" data-view="juegos">Ver juegos ↗</button></div>${gamesList()}</section>${heatmap()}</div>${recentSessions()}`}
+function tutsSticker(small=false){return `<img class="tuts-sticker${small?' tuts-sticker-small':''}" src="tuts-crowned.png" alt="Tuts con corona, sello del campeón de la ausencia" width="160" height="160">`}
+function tutsPanel(){
+ const now=new Date(),records=remoteState?.bot?.connected?withLiveVoice(current(),remoteState.live,now,remoteState.bot.lastSeen):current();
+ const end=new Date(Math.min(+range[1],+now)),start=tutsMode==='history'?historyStart(records,members,end):range[0];
+ const rows=tutsRanking(records,members,start,end,now),winners=rows.filter(m=>m.winner),weeks=weeklyTuts(records,members,start,end,now),champ=rows[0];
+ const score=m=>m.score===null?'—':new Intl.NumberFormat('es-AR',{maximumFractionDigits:1}).format(m.score);
+ const live=!!remoteState?.bot?.connected;
+ const podium=rows.slice(0,3).map((m,i)=>`<article class="tuts-place place-${i+1}${m.winner?' is-winner':''}"><div class="tuts-portrait">${m.winner?tutsSticker():avatar(m.name,m.id)}</div><span class="tuts-rank">${m.rank===1?'👑':'#'+m.rank}</span><strong class="tuts-name">${esc(m.name)}</strong><span class="tuts-title">${m.winner?'Su Majestad, el que nunca está':m.rank===2?'Dejó el visto y se fue':'Está por entrar desde 2024'}</span><div class="tuts-score">${score(m)}<small>/ 100 TUTS</small></div><span class="tuts-metrics">${m.voiceDays} días · ${hours(m.voiceMinutes)} h en voz</span>${m.provisional?'<span class="tuts-provisional">PROVISIONAL · MENOS DE 7 DÍAS</span>':''}</article>`).join('');
+ return `<section class="tuts-section wide-section" aria-labelledby="tuts-heading"><div class="tuts-heading"><div><div class="eyebrow">PREMIOS A LA DESAPARICIÓN</div><h2 id="tuts-heading">El trono de Tuts<span>Mucho grupo. Poca presencia.</span></h2></div><div class="tuts-controls"><div class="tuts-tabs" role="group" aria-label="Período del ranking Tuts"><button data-tuts-mode="period" aria-pressed="${tutsMode==='period'}">Este período</button><button data-tuts-mode="history" aria-pressed="${tutsMode==='history'}">Histórico</button></div><button class="tuts-sync" data-tuts-refresh title="Actualizar ranking"><i class="dot ${live?'':'tuts-offline'}"></i>${live?'Actualización automática · 30 s':'Bot desconectado'} ↻</button></div></div><div class="tuts-scope">${date(start,{year:'numeric'})} — ${date(end,{year:'numeric'})} · Toda la banda${tutsUpdated?' · Consultado '+time(tutsUpdated):''}</div>${winners.length?`<div class="tuts-podium">${podium}</div><div class="tuts-verdict">${tutsSticker(true)}<p><strong>${winners.length>1?'Corona compartida: '+winners.map(m=>esc(m.name)).join(', '):esc(champ.name)+' gobierna la ausencia.'}</strong><span>${winners.length>1?'Empataron en el primer puesto. La corona no elige favoritos.':'No se sabe si tiene Discord o si lo heredó.'}</span></p><span class="tuts-seal">CERTIFICADO<br>POR TUTS™</span></div><details class="tuts-full"><summary>La tabla de los desaparecidos · ${rows.length} integrantes</summary><ol class="tuts-list">${rows.map(m=>`<li><span class="tuts-list-rank">${m.rank}</span><div class="tuts-list-person">${avatar(m.name,m.id)}<strong>${esc(m.name)}</strong>${m.winner?tutsSticker(true):''}${m.provisional?'<small>Provisional</small>':''}</div><span class="tuts-list-score">${score(m)} <small>TUTS</small></span><div class="tuts-meter" role="meter" aria-label="Índice Tuts de ${esc(m.name)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${m.score??0}"><i style="width:${m.score??0}%"></i></div><span class="tuts-list-stats">${m.voiceDays} días · ${hours(m.voiceMinutes)} h</span></li>`).join('')}</ol></details>`:`<div class="tuts-empty">${tutsSticker()}<div><strong>El trono está vacante.</strong><p>${rows.length?'Todavía no hay voz registrada en estas fechas. Sin evidencia, no hay coronación.':'No hay integrantes activos para estas fechas.'}</p></div></div>`}<details class="tuts-history"><summary>El archivo de las excusas <span>GANADORES POR SEMANA</span></summary><div class="tuts-weeks">${weeks.length?weeks.map(w=>`<article><small>${date(w.start)} — ${date(new Date(+w.end-1),{year:'numeric'})}</small><strong>${w.winners.length?'👑 '+w.winners.map(m=>esc(m.name)).join(' / '):'Sin coronación'}</strong><span>${w.winners.length?'Reinado de ausencia':'Sin actividad de voz registrada'}</span></article>`).join(''):'Las semanas completas aparecerán acá. El reinado recién empieza.'}</div></details><details class="tuts-rules"><summary>¿Cómo se gana esta dudosa distinción?</summary><p>100 = más Tuts; 0 = menos Tuts. Medimos participación en voz: 60% frecuencia (días en voz / días en la lista dentro del período), 40% duración (minutos en voz / esos días). Cada valor se compara con el mayor de la banda; el índice es 100 menos esa participación ponderada. Los recién llegados llevan marca provisional por 7 días. Los empates comparten corona.</p><p>El ranking compara siempre a toda la banda; los filtros de jugador, juego y actividad se aplican a las otras secciones. “Este período” usa las fechas elegidas; “Histórico” usa todos los registros hasta la fecha final. El archivo recalcula hasta seis semanas finalizadas, con la lista y las pausas actuales.</p><p>Estar online fuera de voz no suma. El micrófono sin medir no resta. Los cortes del bot dejan huecos sin observación; el resultado refleja solo lo registrado. Las semanas se muestran con el horario de este dispositivo.</p></details></section>`;
+}
+
+function overview(){return tutsPanel()+livePanel()+attendancePanel()+stats()+micPanel()+`<div class="content-grid">${activityChart()}${distribution()}</div><section class="wide-section"><div class="section-heading"><h2 class="section-title">Tiempo por integrante <small>/ TIEMPO EN VOZ</small></h2><button class="link-button" data-view="banda">Toda la banda ↗</button></div>${summary.players.length?`<div class="players-grid">${summary.players.slice(0,4).map(playerCard).join('')}</div>`:`<div class="panel">${empty('No hay sesiones en este período','Registrá una sesión o ajustá los filtros para ver la actividad.',true)}</div>`}</section><div class="bottom-grid"><section class="panel"><div class="panel-head"><h2 class="section-title">Juegos más jugados</h2><button class="link-button" data-view="juegos">Ver juegos ↗</button></div>${gamesList()}</section>${heatmap()}</div>${recentSessions()}`}
 function playersView(){return attendancePanel(true)+`<section class="wide-section"><h2 class="section-title" style="margin-bottom:18px">Tiempo en voz por integrante</h2>${summary.players.length?`<div class="players-grid">${summary.players.map(playerCard).join('')}</div>`:empty('Sin actividad registrada','No hubo entradas a voz en este período.')}</section>`}
 function gamesView(){return `<div class="view-intro"><span class="section-tag">${summary.games.length} JUEGOS</span></div>${summary.games.length?`<div class="game-grid">${summary.games.map((g,i)=>`<article class="game-card"><div class="game-icon" style="background:${['#344433','#574735','#3f3d4b','#444c33','#4a4339','#33464b'][i%6]}">${esc(initials(g.name))}</div><span class="mini-label">JUEGO / ${String(i+1).padStart(2,'0')}</span><h3>${esc(g.name)}</h3><span class="recent">${plural(g.sessions.size,'SESIÓN','SESIONES')} · ${plural(g.players.size,'JUGADOR','JUGADORES')}</span><div class="game-total">${hours(g.total)} <small>h jugando en voz</small></div><div class="name-tags">${[...g.players].map(([id,n])=>`<span>${esc(n)}</span>`).join('')}</div><div style="margin-top:20px"><button class="link-button" data-filter-game="${esc(g.name)}">Ver sus registros ↗</button></div></article>`).join('')}</div>`:empty('No hay juegos registrados','Probá otro período o cargá el nombre del juego en una sesión.')}`}
 function table(rows,details=true){
@@ -109,11 +124,12 @@ async function request(path,method='GET',body,token=adminToken()){
  return response.json();
 }
 async function refreshServer(silent=false){
+ if(refreshing)return false;refreshing=true;
  try{
   const d=await request('./api/state');
   if(d.version!==1||!Array.isArray(d.records))throw Error('No se encontró el servidor de VICIO.');
   const records=validateImport(d).filter(r=>r.source==='bot'),roster=validateMembers(d.members||[]).filter(m=>/^\d+$/.test(m.id));
-  remote=true;remoteState=d;local=records;members=roster;
+  remote=true;remoteState=d;local=records;members=roster;tutsUpdated=new Date();
   populateFilters();render();
   if(!silent)toast('Lista e historial de Discord actualizados.');
   return true;
@@ -121,13 +137,15 @@ async function refreshServer(silent=false){
   if(remote){remoteState={...remoteState,live:[],bot:{...remoteState?.bot,connected:false}};render()}
   if(!silent)toast('No se pudo conectar al servidor.');
   return false;
- }
+ }finally{refreshing=false}
 }
 function download(content,filename,type){const url=URL.createObjectURL(new Blob([content],{type})),a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 function exportJSON(){download(JSON.stringify({version:1,exportedAt:new Date().toISOString(),dataset:'bot',records:current(),members:currentMembers()},null,2),'vicio-respaldo-'+new Date().toISOString().slice(0,10)+'.json','application/json');toast('Respaldo completo exportado. No depende de los filtros.')}
 function csvValue(v){let s=String(v??'');if(/^[\s]*[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"'}
 function exportCSV(){const header=['Jugador','Inicio UTC','Fin UTC','Juego','Actividad','Horas en período','Presencia','Canal','Habló','Muteado','Ensordecido','Transmitió','Cámara','Origen','Nota'];const rows=selected.map(r=>[r.name,r.start,r.end,r.game||'',STATES[category(r)].label,(r.minutes/60).toFixed(3),r.status,r.channel,r.spoke,r.muted,r.deafened,r.streaming,r.camera,r.source,r.note]);download('\uFEFF'+[header,...rows].map(row=>row.map(csvValue).join(';')).join('\r\n'),'vicio-vista-'+new Date().toISOString().slice(0,10)+'.csv','text/csv;charset=utf-8');toast('Vista filtrada exportada en CSV.')}
 document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+ if(b.dataset.tutsMode){tutsMode=b.dataset.tutsMode;render();return}
+ if(b.hasAttribute('data-tuts-refresh')){void refreshServer();return}
  if(b.dataset.member){openMember(b.dataset.member);return}
  if(b.dataset.view){setView(b.dataset.view);return}
  if(b.classList.contains('close-dialog')){b.closest('dialog').close();return}
@@ -152,4 +170,5 @@ document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)r
 for(const el of [...$$('[data-extra]'),...['#player-filter','#game-filter','#state-filter'].map(s=>$(s))])el.addEventListener('change',()=>{resetPages();render()});
 let searchTimer;document.addEventListener('input',e=>{if(e.target.id==='history-search'){const value=e.target.value,caret=e.target.selectionStart;clearTimeout(searchTimer);searchTimer=setTimeout(()=>{search=value;resetPages();render();const input=$('#history-search');if(input){input.focus();input.setSelectionRange(caret,caret)}},180)}});
 for(const d of $$('dialog'))d.addEventListener('click',e=>{if(e.target===d){const r=d.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)d.close()}});
-populateFilters();setView('resumen');void refreshServer(true);setInterval(()=>{if(!$('dialog[open]'))void refreshServer(true)},60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!$('dialog[open]'))void refreshServer(true)});
+populateFilters();setView('resumen');void refreshServer(true);setInterval(()=>{if(!$('dialog[open]'))void refreshServer(true)},30000);

@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import * as model from '../dist/model.js';
 import * as roster from '../dist/attendance.js';
+import * as tuts from '../dist/tuts.js';
 
 const source=readFileSync(new URL('../dist/app.js',import.meta.url),'utf8');
 const html=readFileSync(new URL('../dist/index.html',import.meta.url),'utf8');
@@ -18,7 +19,7 @@ function app({saved=null,responses=[state],token=''}={}){
   addEventListener:(event,callback)=>handlers.set(selector+':'+event,callback),reset(){},focus(){},
   showModal(){this.open=true},close(){this.open=false},querySelector:()=>el(selector+' submit')});return elements.get(selector)};
  const callbacks=[];
- const sandbox={...model,...roster,Date,console,AbortSignal,
+ const sandbox={...model,...roster,...tuts,Date,console,AbortSignal,
   localStorage:{getItem:key=>storage.get(key)??null},
   sessionStorage:{getItem:key=>session.get(key)??null,setItem:(key,value)=>session.set(key,value),removeItem:key=>session.delete(key)},
   document:{querySelector:el,querySelectorAll:()=>[],addEventListener(){}},
@@ -27,7 +28,7 @@ function app({saved=null,responses=[state],token=''}={}){
    return value?.httpError?{ok:false,status:value.httpError,json:async()=>({error:'Clave incorrecta.'})}:{ok:true,json:async()=>value}}};
  vm.createContext(sandbox);
  const code=source.replace(/^import .*;\n/gm,'').replace("populateFilters();setView('resumen');void refreshServer(true);",'populateFilters=()=>{};render=()=>{};toast=()=>{};');
- vm.runInContext(code+`;globalThis.api={refreshServer,currentMembers,current,settingsView,livePanel,openMember,recentSessions,historyView,resetPages,
+ vm.runInContext(code+`;globalThis.api={tutsPanel,setTutsRange(start,end){range=[start,end]},refreshServer,currentMembers,current,settingsView,livePanel,openMember,recentSessions,historyView,resetPages,
  setSelection(records){selected=records;summary=summarize(records)},
  setRecentPage(value){recentPage=value},setHistoryPage(value){page=value},
  get recentPage(){return recentPage},get historyPage(){return page},get backup(){return localBackup},get remoteState(){return remoteState},get remote(){return remote}};`,sandbox);
@@ -111,4 +112,13 @@ test('historial conserva su paginación y etiquetas de datos para celular',()=>{
  const {api}=app();api.setSelection(sessions);api.setHistoryPage(2);
  const result=api.historyView();assert.match(result,/16–23 de 23/);assert.match(result,/data-page="3" disabled/);
  assert.match(result,/class="session-table"/);assert.match(result,/data-label="Juego"/);assert.match(result,/data-label="Fecha \/ horario"/);
+});
+
+
+test('el podio muestra la corona y escapa nombres, con toda la banda y archivo semanal',async()=>{
+ const end=new Date('2026-10-27T20:00:00Z'),start=new Date('2026-10-01T00:00:00Z');
+ const raw={id:'tuts-ui',sessionId:'tuts-ui',userId:'456',name:'Asistente',start:'2026-10-20T19:00:00Z',end:'2026-10-20T21:00:00Z',inVoice:true,game:null,spoke:'unknown',muted:false,deafened:false,streaming:false,camera:false,status:'online',source:'bot'};
+ const {api,el}=app({responses:[{...state,records:[raw],members:[{...member,name:'<img onerror=evil>'},{...member,id:'456',name:'Asistente'}]}]});
+ await api.refreshServer(true);api.setTutsRange(start,end);el('#player-filter').value='456';
+ const panel=api.tutsPanel();assert.match(panel,/tuts-podium/);assert.match(panel,/tuts-crowned.png/);assert.match(panel,/&lt;img onerror=evil&gt;/);assert.doesNotMatch(panel,/<img onerror=evil>/);assert.match(panel,/archivo de las excusas/);assert.match(panel,/2 integrantes/);assert.match(panel,/100/);
 });
