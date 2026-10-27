@@ -27,7 +27,10 @@ function app({saved=null,responses=[state],token=''}={}){
    return value?.httpError?{ok:false,status:value.httpError,json:async()=>({error:'Clave incorrecta.'})}:{ok:true,json:async()=>value}}};
  vm.createContext(sandbox);
  const code=source.replace(/^import .*;\n/gm,'').replace("populateFilters();setView('resumen');void refreshServer(true);",'populateFilters=()=>{};render=()=>{};toast=()=>{};');
- vm.runInContext(code+`;globalThis.api={refreshServer,currentMembers,current,settingsView,livePanel,openMember,get backup(){return localBackup},get remoteState(){return remoteState},get remote(){return remote}};`,sandbox);
+ vm.runInContext(code+`;globalThis.api={refreshServer,currentMembers,current,settingsView,livePanel,openMember,recentSessions,historyView,resetPages,
+ setSelection(records){selected=records;summary=summarize(records)},
+ setRecentPage(value){recentPage=value},setHistoryPage(value){page=value},
+ get recentPage(){return recentPage},get historyPage(){return page},get backup(){return localBackup},get remoteState(){return remoteState},get remote(){return remote}};`,sandbox);
  return {api:sandbox.api,storage,session,el,calls,retry:callbacks[0],submit:()=>handlers.get('#member-form:submit')({preventDefault(){},currentTarget:el('#member-form')})};
 }
 
@@ -83,4 +86,29 @@ test('Ahora en voz excluye a los usuarios online y oculta la sección vacía',as
  const {api}=app({responses:[{...state,live:[{userId:'fuera',name:'Solo online',inVoice:false},{userId:'voz',name:'Dentro',inVoice:true,channel:'Canal'}]},state]});
  await api.refreshServer(true);assert.doesNotMatch(api.livePanel(),/Solo online/);assert.match(api.livePanel(),/Dentro/);
  await api.refreshServer(true);assert.equal(api.livePanel(),'');
+});
+
+const sessions=Array.from({length:23},(_,i)=>({id:'tramo-'+String(i).padStart(2,'0'),userId:String(i),name:i===12?'gheymaster9000':'Jugador '+i,sessionId:'sesion-'+i,start:new Date(Date.UTC(2026,9,26,23,59-i)).toISOString(),end:new Date(Date.UTC(2026,9,27,0,59-i)).toISOString(),minutes:60,inVoice:true,spoke:'unknown',game:null}));
+
+test('últimas sesiones pagina todos los tramos, incluido un integrante fuera de los primeros diez',()=>{
+ const {api}=app();api.setSelection(sessions);
+ const first=api.recentSessions();
+ assert.match(first,/1–10 de 23 tramos/);assert.doesNotMatch(first,/gheymaster9000/);
+ assert.match(first,/data-recent-page="0" disabled/);assert.doesNotMatch(first,/data-recent-page="2" disabled/);
+ api.setRecentPage(2);assert.match(api.recentSessions(),/gheymaster9000/);assert.match(api.recentSessions(),/11–20 de 23/);
+ api.setRecentPage(3);const last=api.recentSessions();assert.match(last,/21–23 de 23/);assert.match(last,/data-recent-page="4" disabled/);
+ assert.equal(api.historyPage,1);
+});
+
+test('un filtro o una actualización con menos datos mantiene una página válida',()=>{
+ const {api}=app();api.setSelection(sessions);api.setRecentPage(3);api.setHistoryPage(2);
+ api.setSelection(sessions.slice(0,2));assert.match(api.recentSessions(),/1–2 de 2/);assert.equal(api.recentPage,1);
+ api.setSelection([]);const empty=api.recentSessions();assert.match(empty,/No hay registros/);assert.match(empty,/0–0 de 0/);assert.equal(api.recentPage,1);
+ api.resetPages();assert.equal(api.historyPage,1);
+});
+
+test('historial conserva su paginación y etiquetas de datos para celular',()=>{
+ const {api}=app();api.setSelection(sessions);api.setHistoryPage(2);
+ const result=api.historyView();assert.match(result,/16–23 de 23/);assert.match(result,/data-page="3" disabled/);
+ assert.match(result,/class="session-table"/);assert.match(result,/data-label="Juego"/);assert.match(result,/data-label="Fecha \/ horario"/);
 });

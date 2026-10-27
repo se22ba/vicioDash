@@ -33,3 +33,75 @@ nav button.active{background:#de293e;color:#fff;box-shadow:3px 3px 0 #451823;bor
 .voice-channel-label{display:block;max-width:480px;margin:20px 0;font:11px var(--mono)}.voice-channel-label select{display:block;width:100%;margin:9px 0 18px;padding:12px;background:#121318;border:1px solid #57404a}.microphone-panel .panel-head{flex-wrap:wrap}.microphone-panel .section-title{margin-top:8px}.microphone-panel td{font-size:11px}
 
 #member-token-row{display:block;margin:20px 0 0;font-size:12px}#member-token{display:block;width:100%;margin-top:8px;padding:11px;background:#121318;border:1px solid var(--line)}#member-error,#admin-error{margin-top:15px}
+
+/* Session pages stay readable on a phone without clipping names or games. */
+.sessions-body{margin-top:18px}
+nav.pagination{display:flex;gap:14px;flex-wrap:wrap}
+.pagination>div{margin-left:auto}
+.pagination .page-button{min-height:44px;padding:8px 12px;white-space:nowrap;font:10px var(--mono)}
+.pagination .page-position{white-space:nowrap}
+.session-table .member-cell>span:last-child{overflow-wrap:anywhere;white-space:normal}
+.player-top>div,.live-player>div{min-width:0}
+.player-name,.live-player strong,.live-player small,.game-card h3,.name-tags span{overflow-wrap:anywhere}
+.game-info strong{overflow-wrap:anywhere}
+.history-wrap{max-width:100%}
+.stat-grid,.attendance-stats,.detail-stats{grid-template-columns:repeat(4,minmax(0,1fr))}
+.detail-stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+.stat,.attendance-stats>div{min-width:0}
+.dialog-head h2,.detail-list strong{overflow-wrap:anywhere;min-width:0}
+.detail-list>div{gap:14px}
+.detail-list strong{text-align:right}
+@media(max-width:1000px) and (min-width:601px){
+ .content-grid,.bottom-grid{grid-template-columns:minmax(0,1fr)}
+ .distribution{flex-direction:row}
+ .distribution-legend{grid-template-columns:1fr}
+ .stat-grid,.attendance-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .stat:nth-child(2),.attendance-stats>div:nth-child(2){border-right:0}
+ .stat:nth-child(-n+2),.attendance-stats>div:nth-child(-n+2){border-bottom:1px solid var(--line)}
+}
+@media(max-width:850px){
+ .settings{display:flex;align-items:center;justify-content:center;font-size:0;min-height:44px;margin-top:auto}
+ .settings>span{font-size:22px;margin:0}
+}
+@media(max-width:600px){
+ .rail{gap:8px;padding:9px 12px}
+ .rail nav{min-width:0;gap:2px}
+ .rail nav button{min-width:40px;min-height:44px;padding:8px}
+ .rail .settings{flex:0 0 36px;margin:0;border:0;padding:0;min-height:44px}
+ .stat-grid,.attendance-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .attendance-stats>div{gap:9px;padding:12px}
+ .attendance-stats span{overflow-wrap:anywhere}
+ .stat-value{font-size:42px}
+ .stat-label{letter-spacing:.4px;overflow-wrap:anywhere}
+ .stat-note{overflow-wrap:anywhere}
+ .panel-head{flex-wrap:wrap}
+ .live-grid{grid-template-columns:minmax(0,1fr)}
+ .player-top{align-items:flex-start}
+ .player-foot{gap:5px;flex-wrap:wrap}
+ .player-hours small{display:block;margin:0}
+ .custom-range label{width:100%;justify-content:space-between}
+ .custom-range input{max-width:100%;min-height:44px}
+ .select-wrap select{min-height:36px}
+ .distribution{gap:14px;padding:20px 16px}
+ .donut{width:110px;height:110px}
+ .distribution-legend button{white-space:normal;flex-wrap:wrap}
+ .distribution-legend b{margin-left:12px}
+ .session-table,.session-table tbody{display:block;white-space:normal}
+ .session-table thead{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%)}
+ .session-table tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px 16px;padding:18px 17px;border-bottom:1px solid var(--line)}
+ .session-table tr:last-child{border-bottom:0}
+ .session-table td{display:block;border:0;padding:0;min-width:0;overflow-wrap:anywhere;font-size:12px}
+ .session-table td:before{content:attr(data-label);display:block;font:8px var(--mono);text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:6px}
+ .session-table td:first-child{grid-column:1/-1}
+ .session-table td:first-child:before{display:none}
+ .session-table td:nth-child(2),.session-table td:nth-child(3){grid-column:1/-1}
+ .session-table .member-cell{font-size:14px;align-items:center}
+ .session-table .member-cell .avatar{width:30px;height:30px}
+ .session-table .date-cell{line-height:1.8}
+ .session-table .state-badge{font-size:11px;flex-wrap:wrap}
+ .session-table .icon-button{width:44px;height:44px}
+ nav.pagination{padding:14px 16px;gap:12px}
+ .pagination>div{width:100%;margin:0;justify-content:space-between;gap:6px}
+ .pagination .page-button{padding:8px;font-size:10px}
+ .form-token input,#admin-token{width:100%;max-width:100%;padding:11px;background:#121318;border:1px solid var(--line)}
+}
