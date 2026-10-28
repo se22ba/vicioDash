@@ -167,3 +167,7 @@ nav button .nav-label{font:inherit;width:auto;flex:1;text-align:left}
 
 .settings .settings-label{font:inherit;margin:0}
 @media(max-width:850px){.settings .settings-label{display:none}}
+
+/* Filters keep their labels when type grows or the viewport narrows. */
+.filterbar{flex-wrap:wrap}.subfilters{flex-wrap:wrap;gap:16px 22px}
+@media(max-width:600px){.subfilters{gap:14px}.heat-key{gap:4px;flex-wrap:wrap}.heat-foot>span{max-width:100%}}
