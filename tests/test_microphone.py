@@ -2,8 +2,8 @@ import asyncio
 import struct
 import unittest
 from datetime import timedelta
-from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from types import SimpleNamespace, ModuleType
+from unittest.mock import AsyncMock, Mock, patch
 
 from server import Observer
 from storage import Store, utcnow, validate
@@ -92,6 +92,139 @@ class MeterTests(unittest.TestCase):
 
 
 class ControllerTests(unittest.IsolatedAsyncioTestCase):
+    def controller_fixture(self):
+        store = Store(":memory:")
+        self.addCleanup(store.close)
+        observer = Observer(store)
+        observer.connected = True
+        channel = SimpleNamespace(id=99, name="El after", permissions_for=lambda _: SimpleNamespace(connect=True))
+        guild = SimpleNamespace(voice_channels=[channel], get_channel=lambda _: channel, me=object(), voice_client=None)
+        channel.guild = guild
+        client = SimpleNamespace(is_ready=lambda: True, get_guild=lambda _: guild)
+        controller = observer.voice
+        controller.client, controller.guild_id = client, 1
+        store.set_setting("voice_channel_id", "99")
+        return controller, client, guild, channel
+
+    def voice_fixture(self, guild, channel, connected=False):
+        voice = SimpleNamespace(channel=channel, is_connected=Mock(return_value=connected),
+                                disconnect=AsyncMock(), cleanup=Mock(),
+                                _connection=SimpleNamespace(_socket_reader=SimpleNamespace(is_alive=Mock(return_value=True))))
+        voice.cleanup.side_effect = lambda: setattr(guild, "voice_client", None)
+        guild.voice_client = voice
+        return voice
+
+    async def test_cached_orphan_is_disconnected_and_cleaned_even_when_disconnect_raises(self):
+        controller, client, guild, channel = self.controller_fixture()
+        orphan = self.voice_fixture(guild, channel)
+        orphan.disconnect.side_effect = RuntimeError("disconnect failed")
+        controller._connect = AsyncMock()
+        await controller.step(client, 1)
+        orphan.disconnect.assert_awaited_once_with(force=True)
+        orphan.cleanup.assert_called_once()
+        self.assertIsNone(guild.voice_client)
+        controller._connect.assert_awaited_once_with(channel)
+
+    async def test_health_tolerates_missing_transport_and_recognizes_an_internal_resume(self):
+        controller, _, guild, channel = self.controller_fixture()
+        voice = self.voice_fixture(guild, channel, connected=True)
+        controller.connection = voice
+        controller.status = "reconnecting"
+        self.assertTrue(controller.healthy())
+        voice._connection._socket_reader = None
+        self.assertFalse(controller.healthy())
+        voice._connection = None
+        voice.is_connected.side_effect = AttributeError("transport missing")
+        self.assertFalse(controller.healthy())
+
+    async def test_transient_disconnect_gets_grace_and_can_resume_without_replacing_voice(self):
+        controller, client, guild, channel = self.controller_fixture()
+        voice = self.voice_fixture(guild, channel)
+        controller.connection = voice
+        controller._connect = AsyncMock()
+        with patch("microphone.time.monotonic", return_value=100):
+            await controller.step(client, 1)
+        self.assertEqual(controller.status, "reconnecting")
+        voice.disconnect.assert_not_awaited()
+        voice.is_connected.return_value = True
+        with patch("microphone.time.monotonic", return_value=105):
+            await controller.step(client, 1)
+        self.assertEqual(controller.status, "connected")
+        self.assertEqual(controller.error, "")
+        self.assertIsNone(controller._unhealthy_since)
+        controller._connect.assert_not_awaited()
+
+    async def test_unrecovered_voice_is_replaced_after_grace(self):
+        controller, client, guild, channel = self.controller_fixture()
+        voice = self.voice_fixture(guild, channel)
+        controller.connection = voice
+        controller._connect = AsyncMock()
+        for now in (100, 110):
+            with patch("microphone.time.monotonic", return_value=now):
+                await controller.step(client, 1)
+        controller._connect.assert_not_awaited()
+        with patch("microphone.time.monotonic", return_value=116):
+            await controller.step(client, 1)
+        voice.disconnect.assert_awaited_once()
+        voice.cleanup.assert_called_once()
+        controller._connect.assert_awaited_once_with(channel)
+
+    async def test_failed_reconnects_back_off_at_fifteen_thirty_and_sixty_seconds(self):
+        controller, client, _, _ = self.controller_fixture()
+        async def fail(_):
+            controller.failures += 1
+            controller.status = "error"
+        controller._connect = AsyncMock(side_effect=fail)
+        for now, attempts in [(0, 1), (14, 1), (15, 2), (44, 2), (45, 3), (104, 3), (105, 4)]:
+            with patch("microphone.time.monotonic", return_value=now):
+                await controller.step(client, 1)
+            self.assertEqual(controller._connect.await_count, attempts)
+        self.assertEqual(controller._next_attempt, 165)
+        with patch("microphone.time.monotonic", return_value=110):
+            self.assertEqual(controller.snapshot()["retryInSeconds"], 55)
+
+    async def test_failed_or_cancelled_handshake_cleans_the_in_progress_client(self):
+        for failure in (RuntimeError("private details"), asyncio.CancelledError()):
+            with self.subTest(failure=type(failure).__name__):
+                controller, client, guild, channel = self.controller_fixture()
+                created = []
+                class VoiceBase:
+                    def __init__(self, client, target):
+                        self.channel = target
+                        self.disconnected = False
+                        self.cleaned = False
+                        guild.voice_client = self
+                        created.append(self)
+                    def is_connected(self):
+                        return False
+                    async def disconnect(self, *, force):
+                        self.disconnected = force
+                    def cleanup(self):
+                        self.cleaned = True
+                        guild.voice_client = None
+                async def connect(**options):
+                    options["cls"](client, channel)
+                    raise failure
+                channel.connect = connect
+                discord = ModuleType("discord")
+                discord.VoiceClient = VoiceBase
+                voice_state = ModuleType("discord.voice_state")
+                voice_state.VoiceConnectionState = object
+                with patch.dict("sys.modules", {"discord": discord, "discord.voice_state": voice_state}):
+                    if isinstance(failure, asyncio.CancelledError):
+                        with self.assertRaises(asyncio.CancelledError):
+                            await controller._connect(channel)
+                    else:
+                        await controller._connect(channel)
+                        self.assertEqual(controller.last_error_type, "RuntimeError")
+                        self.assertNotIn("private details", controller.error)
+                        self.assertEqual(controller.attempts, 1)
+                        self.assertIsNotNone(controller.last_attempt)
+                self.assertIsNone(controller.connection)
+                self.assertIsNone(guild.voice_client)
+                self.assertTrue(created[0].disconnected)
+                self.assertTrue(created[0].cleaned)
+
     async def test_permissions_failure_is_visible_without_attempting_connection(self):
         store = Store(":memory:")
         try:

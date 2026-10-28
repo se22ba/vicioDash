@@ -72,6 +72,8 @@ El detector acumula segundos aproximados de transmisión a partir de identificad
 
 El adaptador usa hooks internos de **discord.py 2.7.1**, fijada con extras de voz (PyNaCl y davey para DAVE). No requiere FFmpeg. Revisar el adaptador y sus pruebas antes de actualizar la dependencia. Si el hosting no completa la conexión UDP, el detector muestra un error; la asistencia sigue funcionando.
 
+La recuperación de voz concede 15 segundos a la reconexión interna de Discord antes de reemplazar una sesión perdida. Limpia tanto la conexión del detector como el cliente que Discord haya registrado durante un handshake fallido, incluso si falla la desconexión. Los errores reintentan a los 15, 30 y 60 segundos; las pausas sin transporte sano nunca generan cobertura ni silencio. La API expone intentos, última tentativa, tipo del último error y espera del próximo intento, sin publicar detalles de excepciones o credenciales. `/api/health` distingue `botConnected` y `voiceConnected`; la cabecera también distingue conexión a Discord de pérdida de voz.
+
 Un bot puede estar en un solo canal de voz de este servidor a la vez. La escucha simultánea de varios canales con varios bots no está implementada.
 
 ## API

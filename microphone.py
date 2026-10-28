@@ -8,6 +8,7 @@ import asyncio
 import logging
 import os
 import struct
+import time
 
 from storage import utcnow, stamp
 
@@ -99,6 +100,11 @@ class MicController:
         self.error = ""
         self.channels = []
         self._next_attempt = 0
+        self._unhealthy_since = None
+        self.attempts = 0
+        self.failures = 0
+        self.last_attempt = None
+        self.last_error_type = ""
         self.meter = observer.mic
         self.meter.health_check = self.healthy
 
@@ -108,18 +114,22 @@ class MicController:
 
     def healthy(self):
         vc = self.connection
-        return bool(self.observer.connected and self.status == "connected" and vc
-                    and vc.is_connected() and vc._connection._socket_reader.is_alive())
+        reader = getattr(getattr(vc, "_connection", None), "_socket_reader", None)
+        return bool(self.observer.connected and vc and reader
+                    and reader.is_alive() and vc.is_connected())
 
     def snapshot(self):
         selected = self.selected
         channel = next((c for c in self.channels if c["id"] == selected), None)
         status = self.status if selected else "disabled"
         if selected and (status == "disabled" or (status == "connected" and not self.healthy())):
-            status = "waiting"
+            status = "reconnecting" if self.connection else "waiting"
         return dict(channelId=selected, channelName=channel["name"] if channel else "",
                     status=status, connected=self.healthy(),
-                    error=self.error, channels=self.channels)
+                    error=self.error, channels=self.channels,
+                    attempts=self.attempts, lastAttempt=self.last_attempt,
+                    lastErrorType=self.last_error_type,
+                    retryInSeconds=max(0, int(self._next_attempt - time.monotonic() + .999)))
 
     def configure(self, channel_id):
         if not isinstance(channel_id, str) or (channel_id and not channel_id.isdecimal()):
@@ -131,18 +141,35 @@ class MicController:
         self.meter.reset_transport()
         self.store.set_setting("voice_channel_id", channel_id)
         self._next_attempt = 0
+        self._unhealthy_since = None
+        self.failures = 0
+        self.last_error_type = ""
         self.error = ""
 
-    async def close(self):
+    async def close(self, guild=None):
         self.meter.tick()
         self.status = "waiting"
         self.meter.reset_transport()
+        self._unhealthy_since = None
         vc, self.connection = self.connection, None
-        if vc:
+        if guild is None and self.client is not None:
+            guild = self.client.get_guild(self.guild_id)
+        # channel.connect registers its client BEFORE awaiting the handshake.
+        # Non-timeout failures can leave it cached even when our assignment failed.
+        registered = getattr(guild, "voice_client", None)
+        clients = [vc] if vc is not None else []
+        if registered is not None and all(registered is not item for item in clients):
+            clients.append(registered)
+        for client in clients:
             try:
-                await vc.disconnect(force=True)
+                await asyncio.wait_for(client.disconnect(force=True), timeout=10)
             except Exception:
                 LOG.warning("No se pudo completar la desconexión de voz.")
+            finally:
+                try:
+                    client.cleanup()
+                except Exception:
+                    LOG.warning("No se pudo liberar la sesión de voz anterior.")
 
     async def run(self, client, guild_id):
         self.client, self.guild_id = client, guild_id
@@ -168,20 +195,38 @@ class MicController:
         self.channels = [dict(id=str(c.id), name=c.name[:100]) for c in guild.voice_channels] if guild else []
         target = self.selected
         if not target or not guild or not self.observer.connected:
-            if self.connection:
-                await self.close()
-        elif not self.connection or str(self.connection.channel.id) != target or not self.healthy():
-            if self.connection:
-                await self.close()
-            if asyncio.get_running_loop().time() >= self._next_attempt:
+            if self.connection or getattr(guild, "voice_client", None):
+                await self.close(guild)
+            self.status = "waiting" if target else "disabled"
+        elif self.connection and str(self.connection.channel.id) == target and self.healthy():
+            self.status, self.error = "connected", ""
+            self._unhealthy_since = None
+            self.failures = 0
+        else:
+            now = time.monotonic()
+            if self.connection and str(self.connection.channel.id) == target:
+                if self._unhealthy_since is None:
+                    self._unhealthy_since = now
+                    self.meter.reset_transport()
+                self.status = "reconnecting"
+                self.error = "La conexión de voz se cortó. Intentando recuperarla."
+                # Let discord.py resume its own session before replacing it.
+                if now - self._unhealthy_since < 15:
+                    return
+            if now >= self._next_attempt:
+                if self.connection or getattr(guild, "voice_client", None):
+                    await self.close(guild)
                 channel = guild.get_channel(int(target))
                 if not channel or not any(c["id"] == target for c in self.channels):
                     self.status, self.error = "error", "El canal configurado ya no está disponible."
+                    delay = 60
                 elif not channel.permissions_for(guild.me).connect:
                     self.status, self.error = "error", "Falta el permiso Conectar del bot en este canal."
+                    delay = 60
                 else:
                     await self._connect(channel)
-                self._next_attempt = asyncio.get_running_loop().time() + 60
+                    delay = 0 if self.status == "connected" else min(60, 15 * 2 ** min(max(0, self.failures - 1), 2))
+                self._next_attempt = time.monotonic() + delay
 
     async def _connect(self, channel):
         import discord
@@ -193,6 +238,8 @@ class MicController:
             def __init__(self, client, target):
                 self.microphones = {}
                 super().__init__(client, target)
+                # Keep the in-progress client reachable for failure/cancellation cleanup.
+                controller.connection = self
 
             def create_connection_state(self):
                 return VoiceConnectionState(self, hook=self.on_voice_message)
@@ -216,6 +263,8 @@ class MicController:
                     loop.call_soon_threadsafe(controller.meter.pulse, *header, utcnow())
 
         self.status, self.error = "connecting", ""
+        self.attempts += 1
+        self.last_attempt = stamp(utcnow())
         self.meter.reset_transport()
         self.meter.channel_id = str(channel.id)
         try:
@@ -223,9 +272,15 @@ class MicController:
                                                     self_mute=True, self_deaf=False)
             self.connection._connection.add_socket_listener(self.connection.on_datagram)
             self.status = "connected"
+            self.failures = 0
             LOG.info("Detector de micrófono conectado al canal configurado, sin grabación.")
+        except asyncio.CancelledError:
+            await self.close(getattr(channel, "guild", None))
+            raise
         except Exception as error:
-            await self.close()
+            self.failures += 1
+            self.last_error_type = type(error).__name__
+            await self.close(getattr(channel, "guild", None))
             self.status = "error"
-            self.error = "No se pudo conectar a voz. Revisá permisos, dependencias y la salida UDP del hosting."
+            self.error = f"No se pudo conectar a voz ({self.last_error_type}). Se reintentará automáticamente."
             LOG.warning("Detector de micrófono no disponible (%s).", type(error).__name__)

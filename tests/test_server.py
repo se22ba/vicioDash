@@ -135,6 +135,18 @@ class ApiTests(AioHTTPTestCase):
     def store(self):
         return next(v for v in self.app.values() if isinstance(v, Store))
 
+    async def test_health_separates_gateway_and_voice_availability(self):
+        observer = next(v for v in self.app.values() if isinstance(v, Observer))
+        observer.connected = True
+        health = await (await self.client.get("/api/health")).json()
+        self.assertTrue(health["ok"])
+        self.assertTrue(health["botConnected"])
+        self.assertFalse(health["voiceConnected"])
+        voice = (await (await self.client.get("/api/state")).json())["voice"]
+        self.assertEqual(voice["attempts"], 0)
+        self.assertIn("lastErrorType", voice)
+        self.assertIn("retryInSeconds", voice)
+
     async def test_human_record_endpoints_are_closed_even_with_admin_key(self):
         saved = self.store.put(record())
         for headers in ({}, self.auth):

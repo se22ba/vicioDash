@@ -35,7 +35,8 @@ function render(){
  range=periodRange();selected=selectRecords(current(),{start:range[0],end:range[1],user:$('#player-filter').value,game:$('#game-filter').value,state:$('#state-filter').value,search,extras:Object.fromEntries($$('[data-extra]').map(el=>[el.dataset.extra,el.value]))});if(view!=='historial'&&view!=='ajustes')selected=voiceRecords(selected);summary=summarize(selected);
  $('#date-line').textContent=`${date(range[0],{year:'numeric'})} — ${date(range[1],{year:'numeric'})}`;
  $('#record-count').textContent=`${plural(selected.length,'TRAMO','TRAMOS')}`;
- $('#data-label').textContent=remoteState?.bot?.connected?'BOT CONECTADO':'BOT DESCONECTADO';$('#data-label').classList.toggle('real',!!remoteState?.bot?.connected);
+ const voiceLost=!!(remoteState?.bot?.connected&&remoteState?.voice?.channelId&&!remoteState.voice.connected);
+ $('#data-label').textContent=remoteState?.bot?.connected?(voiceLost?'DISCORD OK · VOZ SIN CONEXIÓN':'BOT CONECTADO'):'BOT DESCONECTADO';$('#data-label').classList.toggle('real',!!remoteState?.bot?.connected);$('#data-label').classList.toggle('voice-warning',voiceLost);
  const detailsState=new Map($$('#content details').map(d=>[d.className,d.open]));
  $('#content').innerHTML=({resumen:overview,banda:playersView,juegos:gamesView,historial:historyView,ajustes:settingsView}[view])();
  for(const d of $$('#content details'))if(detailsState.has(d.className))d.open=detailsState.get(d.className);
@@ -76,8 +77,8 @@ function micPanel(){
 }
 function micSettings(){
  if(!remote)return '';
- const v=remoteState?.voice||{},labels={disabled:'DESACTIVADO',waiting:'ESPERANDO CONEXIÓN',connecting:'CONECTANDO',connected:'CONECTADO',error:'ERROR'};
- return `<section class="panel wide-section"><div class="panel-body"><span class="setting-status">${labels[v.status]||'ACTUALIZANDO'}</span><h3 class="section-title">Detector de micrófono</h3><label class="voice-channel-label">Canal de voz<select id="voice-channel"><option value="">Desactivado</option>${(v.channels||[]).map(c=>`<option value="${esc(c.id)}" ${c.id===v.channelId?'selected':''}>${esc(c.name)}</option>`).join('')}${v.channelId&&!(v.channels||[]).some(c=>c.id===v.channelId)?`<option value="${esc(v.channelId)}" selected>Canal no disponible</option>`:''}</select></label><div class="button-row"><button class="primary" id="save-voice">Guardar canal ↗</button><button class="secondary" id="refresh-server">Actualizar ↻</button></div>${v.error?`<div class="error" role="alert">${esc(v.error)}</div>`:''}</div></section>`;
+ const v=remoteState?.voice||{},labels={disabled:'DESACTIVADO',waiting:'ESPERANDO CONEXIÓN',connecting:'CONECTANDO',reconnecting:'RECONECTANDO',connected:'CONECTADO',error:'ERROR'};
+ return `<section class="panel wide-section"><div class="panel-body"><span class="setting-status">${labels[v.status]||'ACTUALIZANDO'}</span><h3 class="section-title">Detector de micrófono</h3><label class="voice-channel-label">Canal de voz<select id="voice-channel"><option value="">Desactivado</option>${(v.channels||[]).map(c=>`<option value="${esc(c.id)}" ${c.id===v.channelId?'selected':''}>${esc(c.name)}</option>`).join('')}${v.channelId&&!(v.channels||[]).some(c=>c.id===v.channelId)?`<option value="${esc(v.channelId)}" selected>Canal no disponible</option>`:''}</select></label><div class="button-row"><button class="primary" id="save-voice">Guardar canal ↗</button><button class="secondary" id="refresh-server">Actualizar ↻</button></div>${v.error?`<div class="error" role="alert">${esc(v.error)}</div>`:''}${v.retryInSeconds>0?`<p class="voice-retry">Reintento automático en hasta ${Math.ceil(v.retryInSeconds)} s · ${v.attempts||0} intentos desde el arranque</p>`:''}</div></section>`;
 }
 function tutsSticker(small=false){return `<img class="tuts-sticker${small?' tuts-sticker-small':''}" src="tuts-crowned.png" alt="Tuts con corona, sello del campeón de la ausencia" width="160" height="160">`}
 function ioPasoSticker(){return '<img class="io-paso-sticker" src="io-paso.webp" alt="" width="64" height="64">'}

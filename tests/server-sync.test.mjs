@@ -161,3 +161,9 @@ test('Crauzy usa todo el historial del período, escapa datos y deja Ahora en vo
  api.setTutsRange(new Date('2026-10-21T00:00:00Z'),new Date('2026-10-27T20:00:00Z'));assert.doesNotMatch(api.crauzyPanel(),/class="crauzy-badge"/);
  api.setTutsMode('history');assert.match(api.crauzyPanel(),/class="crauzy-badge"/);
 });
+
+
+test('configuración distingue reconexión de voz y muestra el próximo reintento',async()=>{
+ const {api}=app({responses:[{...state,voice:{channelId:'99',status:'reconnecting',connected:false,error:'Conexión temporalmente perdida',channels:[{id:'99',name:'El after'}],retryInSeconds:15,attempts:2}}]});
+ await api.refreshServer(true);const settings=api.settingsView();assert.match(settings,/RECONECTANDO/);assert.match(settings,/Reintento automático en hasta 15 s/);assert.match(settings,/2 intentos desde el arranque/);
+});

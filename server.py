@@ -230,7 +230,8 @@ def create_app(db_path=None, admin_key=None, enable_bot=True):
         return web.json_response({"voice": observer.voice.snapshot()})
 
     async def health(request):
-        return web.json_response({"ok": True, "botConnected": observer.connected})
+        return web.json_response({"ok": True, "botConnected": observer.connected,
+                                  "voiceConnected": observer.voice.healthy()})
 
     async def admin_session(request):
         return web.json_response({"ok": True})
