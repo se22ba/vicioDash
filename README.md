@@ -12,6 +12,10 @@ El ranking usa toda la banda, independientemente de los otros filtros, y permite
 
 La web consulta cada 30 segundos y al volver a la pestaña. Con el bot conectado agrega al cálculo la cola todavía no persistida de la sesión en voz, sin duplicar minutos, y la limita al último heartbeat más 60 segundos. No requiere migración de base de datos.
 
+La distinción **Io paso** se calcula de forma independiente y muestra la pegatina `dist/io-paso.webp` junto al nombre en el mismo podio y tabla, sin alterar el orden ni el índice Tuts. Compara la proporción de actividad de micrófono RTP sobre el tiempo observado: se entrega a quienes tienen hasta 5% y estrictamente menos de la mitad de la proporción del integrante más activo entre los elegibles. Requiere al menos dos integrantes con 30 minutos observados y 80% de cobertura cada uno; si todos tienen cero actividad, no se entrega. Puede haber varios premiados y coexistir con la corona Tuts. Tocar el sello muestra la proporción, el tiempo observado y la cobertura.
+
+Io paso respeta el período, la fecha de alta y las pausas, y también se recalcula en las semanas del archivo histórico. Se excluye el tiempo fuera de voz y no se deduce silencio del mute ni de datos faltantes. Los intervalos recortados prorratean los contadores de micrófono; la actividad detectada es aproximada y no verifica habla humana. La cola en vivo sin medición solo aumenta el tiempo en voz, nunca inventa actividad o silencio observado.
+
 ## Funciones
 
 - Asistencia por entradas a canales de voz, última visita, días y horas.

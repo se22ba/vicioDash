@@ -28,7 +28,7 @@ function app({saved=null,responses=[state],token=''}={}){
    return value?.httpError?{ok:false,status:value.httpError,json:async()=>({error:'Clave incorrecta.'})}:{ok:true,json:async()=>value}}};
  vm.createContext(sandbox);
  const code=source.replace(/^import .*;\n/gm,'').replace("populateFilters();setView('resumen');void refreshServer(true);",'populateFilters=()=>{};render=()=>{};toast=()=>{};');
- vm.runInContext(code+`;globalThis.api={tutsPanel,setTutsRange(start,end){range=[start,end]},refreshServer,currentMembers,current,settingsView,livePanel,openMember,recentSessions,historyView,resetPages,
+ vm.runInContext(code+`;globalThis.api={tutsPanel,setTutsRange(start,end){range=[start,end]},setTutsMode(value){tutsMode=value},refreshServer,currentMembers,current,settingsView,livePanel,openMember,recentSessions,historyView,resetPages,
  setSelection(records){selected=records;summary=summarize(records)},
  setRecentPage(value){recentPage=value},setHistoryPage(value){page=value},
  get recentPage(){return recentPage},get historyPage(){return page},get backup(){return localBackup},get remoteState(){return remoteState},get remote(){return remote}};`,sandbox);
@@ -121,4 +121,16 @@ test('el podio muestra la corona y escapa nombres, con toda la banda y archivo s
  const {api,el}=app({responses:[{...state,records:[raw],members:[{...member,name:'<img onerror=evil>'},{...member,id:'456',name:'Asistente'}]}]});
  await api.refreshServer(true);api.setTutsRange(start,end);el('#player-filter').value='456';
  const panel=api.tutsPanel();assert.match(panel,/tuts-podium/);assert.match(panel,/tuts-crowned.png/);assert.match(panel,/&lt;img onerror=evil&gt;/);assert.doesNotMatch(panel,/<img onerror=evil>/);assert.match(panel,/archivo de las excusas/);assert.match(panel,/2 integrantes/);assert.match(panel,/100/);
+});
+
+test('io paso comparte tabla y podio, muestra evidencia y respeta el período histórico',async()=>{
+ const raw={id:'io-ui',sessionId:'io-ui',userId:'123',name:'<Oyente>',start:'2026-10-20T19:00:00Z',end:'2026-10-20T21:00:00Z',inVoice:true,game:null,spoke:'unknown',muted:false,deafened:false,streaming:false,camera:false,status:'online',source:'bot',mic:{kind:'rtp',observedSeconds:7200,activeSeconds:0}};
+ const talker={...raw,id:'talker',userId:'456',name:'Locutor',mic:{...raw.mic,activeSeconds:1440}};
+ const {api,el}=app({responses:[{...state,records:[raw,talker],members:[{...member,name:'<Oyente>'},{...member,id:'456',name:'Locutor'}]}]});
+ await api.refreshServer(true);api.setTutsRange(new Date('2026-10-01T00:00:00Z'),new Date('2026-10-27T20:00:00Z'));
+ el('#player-filter').value='456';const panel=api.tutsPanel();
+ assert.match(panel,/class="tuts-full" open/);assert.match(panel,/class="io-paso-badge"/);assert.match(panel,/io-paso.webp/);assert.match(panel,/&lt;Oyente&gt;: io paso/);
+ assert.match(panel,/cobertura 100%/);assert.match(panel,/Io paso: &lt;Oyente&gt;/);assert.equal((panel.match(/<ol/g)||[]).length,1);assert.match(panel,/Mostrá la cuenta/);assert.doesNotMatch(panel,/<Oyente>/);
+ api.setTutsRange(new Date('2026-10-21T00:00:00Z'),new Date('2026-10-27T20:00:00Z'));assert.doesNotMatch(api.tutsPanel(),/class="io-paso-badge"/);
+ api.setTutsMode('history');assert.match(api.tutsPanel(),/class="io-paso-badge"/);
 });

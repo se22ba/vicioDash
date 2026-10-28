@@ -1,4 +1,22 @@
 import {attendance} from './attendance.js';
+import {microphoneSummary,selectRecords} from './model.js';
+
+// An independent microphone distinction; it never changes the attendance order.
+export function ioPasoRanking(records,members,start,end,now=new Date()){
+ const cutoff=new Date(Math.min(+end,+now));
+ const active=members.filter(m=>m.active&&Date.parse(m.since)<+cutoff);
+ const byUser=new Map();for(const r of records){if(!byUser.has(r.userId))byUser.set(r.userId,[]);byUser.get(r.userId).push(r)}
+ const rows=active.map(m=>{
+  const from=new Date(Math.max(+start,Date.parse(m.since)));
+  const [measured]=microphoneSummary(selectRecords(byUser.get(m.id)||[],{start:from,end:cutoff}));
+  const stats=measured||{voiceSeconds:0,observedSeconds:0,activeSeconds:0,coverage:0};
+  const ratio=stats.observedSeconds?stats.activeSeconds/stats.observedSeconds:null;
+  return {...stats,id:m.id,name:m.name,ratio,eligible:stats.observedSeconds>=1800&&stats.coverage>=.8};
+ });
+ const eligible=rows.filter(m=>m.eligible),reference=Math.max(0,...eligible.map(m=>m.ratio));
+ rows.forEach(m=>{m.awarded=m.eligible&&eligible.length>=2&&reference>0&&m.ratio<=.05&&m.ratio<reference*.5});
+ return rows.sort((a,b)=>(a.ratio??Infinity)-(b.ratio??Infinity)||a.name.localeCompare(b.name));
+}
 
 // Extend only the unpersisted tail of a live voice session; never double count it.
 export function withLiveVoice(records,live=[],now=new Date(),lastSeen=null){
@@ -33,7 +51,7 @@ export function weeklyTuts(records,members,start,end,now=new Date()){
   if(+to<=+start)break;
   const lo=new Date(Math.max(+from,+start));
   const ranked=tutsRanking(records,members,lo,to,now),winners=ranked.filter(m=>m.winner);
-  weeks.push({start:lo,end:to,winners});anchor.setDate(anchor.getDate()-7);
+  weeks.push({start:lo,end:to,winners,ioPaso:ioPasoRanking(records,members,lo,to,now).filter(m=>m.awarded)});anchor.setDate(anchor.getDate()-7);
  }
  return weeks;
 }
