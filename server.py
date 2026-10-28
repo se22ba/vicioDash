@@ -71,6 +71,12 @@ class Observer:
         return [{**a["state"], "start": stamp(a["start"])} for a in self.active.values()
                 if a["state"].get("inVoice") is True] if self.connected else []
 
+    def gaming_snapshot(self):
+        # A separate feed keeps online gamers out of the "Ahora en voz" panel.
+        return [{**a["state"], "start": stamp(a["start"])} for a in self.active.values()
+                if a["state"].get("inVoice") is False and a["state"].get("game")
+                and a["state"].get("status") in ("online", "idle", "dnd")] if self.connected else []
+
 
 
 async def discord_loop(observer):
@@ -212,6 +218,7 @@ def create_app(db_path=None, admin_key=None, enable_bot=True):
 
     async def state(request):
         return web.json_response({"version": 1, "records": [r for r in store.all() if r["source"] == "bot"], "members": [m for m in store.members() if m["id"].isdecimal()], "live": observer.snapshot(),
+                                  "awayLive": observer.gaming_snapshot(),
                                   "bot": {"connected": observer.connected, "lastSeen": observer.last_seen},
                                   "voice": observer.voice.snapshot()})
 

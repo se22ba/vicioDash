@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import * as model from '../dist/model.js';
 import * as roster from '../dist/attendance.js';
 import * as tuts from '../dist/tuts.js';
+import * as crauzy from '../dist/crauzy.js';
 
 const source=readFileSync(new URL('../dist/app.js',import.meta.url),'utf8');
 const html=readFileSync(new URL('../dist/index.html',import.meta.url),'utf8');
@@ -19,7 +20,7 @@ function app({saved=null,responses=[state],token=''}={}){
   addEventListener:(event,callback)=>handlers.set(selector+':'+event,callback),reset(){},focus(){},
   showModal(){this.open=true},close(){this.open=false},querySelector:()=>el(selector+' submit')});return elements.get(selector)};
  const callbacks=[];
- const sandbox={...model,...roster,...tuts,Date,console,AbortSignal,
+ const sandbox={...model,...roster,...tuts,...crauzy,Date,console,AbortSignal,
   localStorage:{getItem:key=>storage.get(key)??null},
   sessionStorage:{getItem:key=>session.get(key)??null,setItem:(key,value)=>session.set(key,value),removeItem:key=>session.delete(key)},
   document:{querySelector:el,querySelectorAll:()=>[],addEventListener(){}},
@@ -28,7 +29,7 @@ function app({saved=null,responses=[state],token=''}={}){
    return value?.httpError?{ok:false,status:value.httpError,json:async()=>({error:'Clave incorrecta.'})}:{ok:true,json:async()=>value}}};
  vm.createContext(sandbox);
  const code=source.replace(/^import .*;\n/gm,'').replace("populateFilters();setView('resumen');void refreshServer(true);",'populateFilters=()=>{};render=()=>{};toast=()=>{};');
- vm.runInContext(code+`;globalThis.api={tutsPanel,setTutsRange(start,end){range=[start,end]},setTutsMode(value){tutsMode=value},refreshServer,currentMembers,current,settingsView,livePanel,openMember,recentSessions,historyView,resetPages,
+ vm.runInContext(code+`;globalThis.api={tutsPanel,crauzyPanel,setTutsRange(start,end){range=[start,end]},setTutsMode(value){tutsMode=value},refreshServer,currentMembers,current,settingsView,livePanel,openMember,recentSessions,historyView,resetPages,
  setSelection(records){selected=records;summary=summarize(records)},
  setRecentPage(value){recentPage=value},setHistoryPage(value){page=value},
  get recentPage(){return recentPage},get historyPage(){return page},get backup(){return localBackup},get remoteState(){return remoteState},get remote(){return remote}};`,sandbox);
@@ -147,4 +148,16 @@ test('las declaraciones tipográficas respetan el mínimo de 11px incluso en mó
  const css=readFileSync(new URL('../dist/style.css',import.meta.url),'utf8');
  for(const declaration of css.matchAll(/\bfont(?:-size)?\s*:([^;}]+)/g))for(const size of declaration[1].matchAll(/(?<![\w.-])(\d+(?:\.\d+)?)px/g))assert.ok(Number(size[1])>=11,`Fuente menor a 11px: ${declaration[0]}`);
  assert.match(css,/@media\(max-width:850px\)/);assert.match(css,/tuts-podium\{grid-template-columns:1fr/);
+});
+
+
+test('Crauzy usa todo el historial del período, escapa datos y deja Ahora en voz separado',async()=>{
+ const raw={id:'crauzy-ui',sessionId:'crauzy-ui',userId:'123',name:'<Fugitivo>',start:'2026-10-20T19:00:00Z',end:'2026-10-20T21:00:00Z',inVoice:false,channelId:'',game:'<Juego>',spoke:'unknown',muted:false,deafened:false,streaming:false,camera:false,status:'online',source:'bot'};
+ const together={...raw,id:'together',userId:'456',name:'En voz',inVoice:true,channelId:'99',game:'Con la banda'};
+ const {api,el}=app({responses:[{...state,records:[raw,together],members:[{...member,name:'<Fugitivo>'},{...member,id:'456',name:'En voz'}],awayLive:[{...raw,start:raw.end}],live:[],bot:{connected:true,lastSeen:'2026-10-20T21:00:00Z'}}]});
+ await api.refreshServer(true);api.setTutsRange(new Date('2026-10-01T00:00:00Z'),new Date('2026-10-27T20:00:00Z'));el('#player-filter').value='456';
+ const panel=api.crauzyPanel();assert.match(panel,/cazador de gheys/);assert.match(panel,/crauzy-detective.webp/);assert.match(panel,/&lt;Fugitivo&gt;/);assert.match(panel,/&lt;Juego&gt;/);assert.doesNotMatch(panel,/<Fugitivo>|<Juego>/);assert.match(panel,/2 h 1 min/);assert.match(panel,/No podemos afirmar/);
+ assert.equal(api.livePanel(),'');assert.match(api.tutsPanel(),/class="crauzy-badge"/);
+ api.setTutsRange(new Date('2026-10-21T00:00:00Z'),new Date('2026-10-27T20:00:00Z'));assert.doesNotMatch(api.crauzyPanel(),/class="crauzy-badge"/);
+ api.setTutsMode('history');assert.match(api.crauzyPanel(),/class="crauzy-badge"/);
 });

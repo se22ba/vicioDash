@@ -22,6 +22,17 @@ Los títulos tipo tarjeta de partida se calculan con datos reales del período: 
 
 La edición de premios establece un mínimo tipográfico de 11 px, aumenta el cuerpo y el espaciado, apila el podio en pantallas pequeñas y mantiene controles táctiles y nombres largos legibles.
 
+
+## Crauzy cazador de gheys
+
+Ordena a los integrantes activos por minutos acumulados con una actividad Discord de tipo `playing`, estado visible (`online`, `idle` o `dnd`) y `inVoice=false` en este servidor. Estar online sin juego, actividades ocultas, presencia invisible/offline y registros manuales no puntúan. No permite deducir otro servidor, compañeros de juego ni actividad real frente al teclado. Una persona debe seguir siendo miembro observable del servidor. El bot ya solicita los intents de miembros y presencias y guardaba estos tramos; no se amplían permisos.
+
+La distinción requiere 30 minutos fuera de voz dentro del período; gana quien acumula más minutos completos y los empates comparten sello. El porcentaje de tiempo de juego fuera de voz es informativo, no cambia el orden. Respeta las altas y pausas, usa toda la banda sin los filtros de jugador/juego/actividad y comparte las pestañas de período e histórico con Tuts. Los cortes y la actividad no publicada no se reconstruyen. El sticker `dist/crauzy-detective.webp` se preparó con la foto de referencia como detective gamer, con los textos “CRAUZY” y “TE VI ONLINE”.
+
+`GET /api/state` mantiene `live` limitado a canales de voz y añade `awayLive` para juegos visibles fuera de voz. La cola en curso se incorpora cada 30 segundos hasta el último heartbeat más 60 segundos, siempre limitada al momento actual; nunca duplica los registros persistidos ni copia mediciones acumuladas de micrófono. El expediente muestra juegos, tiempo y porcentaje observado. El ganador también recibe el sello y el título **Fugitivo del lobby** en la tabla Tuts, sin alterar su puntaje.
+
+Referencias oficiales: [eventos de presencia y voz](https://github.com/discord/discord-api-docs/blob/main/developers/events/gateway-events.mdx). Las limitaciones descritas reflejan la presencia que Discord entrega al bot, no acceso al cliente o al equipo de los integrantes.
+
 ## Funciones
 
 - Asistencia por entradas a canales de voz, última visita, días y horas.

@@ -82,6 +82,23 @@ class StorageTests(unittest.TestCase):
         observer.connected = False
         self.assertEqual(observer.snapshot(), [])
 
+    def test_gaming_feed_is_separate_from_voice_and_excludes_hidden_or_unknown_games(self):
+        observer = Observer(self.store)
+        observer.connected = True
+        now = utcnow()
+        for user_id, changes in [("gamer", {}), ("idle", {"status": "idle"}),
+                                 ("hidden", {"status": "offline"}),
+                                 ("no-game", {"game": None}),
+                                 ("voice", {"inVoice": True})]:
+            state = {**dict(userId=user_id, name=user_id, inVoice=False,
+                            game="Juego visible", status="online"), **changes}
+            observer.change(user_id, state, now)
+        self.assertEqual([r["userId"] for r in observer.gaming_snapshot()], ["gamer", "idle"])
+        self.assertEqual([r["userId"] for r in observer.snapshot()], ["voice"])
+        self.assertTrue(all("start" in r for r in observer.gaming_snapshot()))
+        observer.connected = False
+        self.assertEqual(observer.gaming_snapshot(), [])
+
     def test_bot_heartbeat_does_not_accept_a_manual_speech_annotation(self):
         o = Observer(self.store)
         now = utcnow() - timedelta(minutes=10)
@@ -140,6 +157,20 @@ class ApiTests(AioHTTPTestCase):
         data = await (await self.client.get("/api/state")).json()
         self.assertEqual([r["id"] for r in data["records"]], ["one"])
         self.assertEqual(len(self.store.all()), 2)
+
+    async def test_state_exposes_gaming_outside_voice_in_a_separate_feed(self):
+        observer = next(v for v in self.app.values() if isinstance(v, Observer))
+        observer.connected = True
+        state = {k: v for k, v in record(inVoice=False, game="Juego visible").items()
+                 if k not in ("id", "sessionId", "start", "end", "source", "spoke", "note")}
+        observer.change("1", state, utcnow())
+        data = await (await self.client.get("/api/state")).json()
+        self.assertEqual(data["live"], [])
+        self.assertEqual(data["awayLive"][0]["game"], "Juego visible")
+        self.assertFalse(data["awayLive"][0]["inVoice"])
+        observer.connected = False
+        data = await (await self.client.get("/api/state")).json()
+        self.assertEqual(data["awayLive"], [])
 
     async def test_pause_requires_key_and_cannot_change_profile_or_create_members(self):
         member = dict(id="123", name="Integrante", since=stamp(utcnow()), active=True)
