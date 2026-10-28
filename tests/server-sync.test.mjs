@@ -125,12 +125,12 @@ test('el podio muestra la corona y escapa nombres, con toda la banda y archivo s
 
 test('io paso comparte tabla y podio, muestra evidencia y respeta el período histórico',async()=>{
  const raw={id:'io-ui',sessionId:'io-ui',userId:'123',name:'<Oyente>',start:'2026-10-20T19:00:00Z',end:'2026-10-20T21:00:00Z',inVoice:true,game:null,spoke:'unknown',muted:false,deafened:false,streaming:false,camera:false,status:'online',source:'bot',mic:{kind:'rtp',observedSeconds:7200,activeSeconds:0}};
- const talker={...raw,id:'talker',userId:'456',name:'Locutor',mic:{...raw.mic,activeSeconds:1440}};
+ const talker={...raw,id:'talker',userId:'456',name:'Locutor',mic:{...raw.mic,activeSeconds:5000}};
  const {api,el}=app({responses:[{...state,records:[raw,talker],members:[{...member,name:'<Oyente>'},{...member,id:'456',name:'Locutor'}]}]});
  await api.refreshServer(true);api.setTutsRange(new Date('2026-10-01T00:00:00Z'),new Date('2026-10-27T20:00:00Z'));
  el('#player-filter').value='456';const panel=api.tutsPanel();
  assert.match(panel,/class="tuts-full" open/);assert.match(panel,/class="io-paso-badge"/);assert.match(panel,/io-paso.webp/);assert.match(panel,/&lt;Oyente&gt;: io paso/);
- assert.match(panel,/cobertura 100%/);assert.match(panel,/Io paso: &lt;Oyente&gt;/);assert.equal((panel.match(/<ol/g)||[]).length,1);assert.match(panel,/Mostrá la cuenta/);assert.doesNotMatch(panel,/<Oyente>/);
+ assert.match(panel,/cobertura 100%/);assert.match(panel,/Io paso: &lt;Oyente&gt;/);assert.equal((panel.match(/<ol/g)||[]).length,1);assert.match(panel,/Mostrá la cuenta/);assert.match(panel,/Regla <strong>50 y 50/);assert.doesNotMatch(panel,/hasta el 5%|proporción del más activo|dos o más integrantes/);assert.equal((panel.match(/class="io-paso-badge"/g)||[]).length,2);assert.doesNotMatch(panel,/<Oyente>/);
  api.setTutsRange(new Date('2026-10-21T00:00:00Z'),new Date('2026-10-27T20:00:00Z'));assert.doesNotMatch(api.tutsPanel(),/class="io-paso-badge"/);
  api.setTutsMode('history');assert.match(api.tutsPanel(),/class="io-paso-badge"/);
 });

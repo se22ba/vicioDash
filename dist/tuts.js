@@ -13,8 +13,9 @@ export function ioPasoRanking(records,members,start,end,now=new Date()){
   const ratio=stats.observedSeconds?stats.activeSeconds/stats.observedSeconds:null;
   return {...stats,id:m.id,name:m.name,ratio,eligible:stats.observedSeconds>=1800&&stats.coverage>=.8};
  });
- const eligible=rows.filter(m=>m.eligible),reference=Math.max(0,...eligible.map(m=>m.ratio));
- rows.forEach(m=>{m.awarded=m.eligible&&eligible.length>=2&&reference>0&&m.ratio<=.05&&m.ratio<reference*.5});
+ // Half or more of the observed time without microphone activity earns the seal.
+ // Eligibility is personal: another member's activity cannot block the award.
+ rows.forEach(m=>{m.awarded=m.eligible&&m.ratio<=.5});
  return rows.sort((a,b)=>(a.ratio??Infinity)-(b.ratio??Infinity)||a.name.localeCompare(b.name));
 }
 

@@ -14,40 +14,42 @@ test('el directo agrega solo la cola que aún no se guardó y caduca con el hear
 test('el histórico semanal no incorpora semanas futuras ni la semana en curso',()=>{const weeks=weeklyTuts([rec('1')],[member('1'),member('2')],start,end);assert.ok(weeks.length>0);assert.ok(weeks.every(w=>+w.start>=+start&&+w.end<=+end));assert.ok(weeks.some(w=>w.winners.some(m=>m.id==='2')))});
 
 const micRec=(id,activeSeconds=0,observedSeconds=7200)=>({...rec(id),mic:{kind:'rtp',observedSeconds,activeSeconds}});
-test('io paso compara proporciones, entrega varios sellos y no altera el ranking Tuts',()=>{
- const records=[micRec('1',0),micRec('2',144),micRec('3',1440)],roster=['1','2','3','4'].map(id=>member(id));
+test('io paso distingue la mitad en silencio, entrega varios sellos y no altera el ranking Tuts',()=>{
+ const records=[micRec('1',0),micRec('2',144),micRec('3',4320)],roster=['1','2','3','4'].map(id=>member(id));
  const rows=ioPasoRanking(records,roster,start,end);
  assert.deepEqual(rows.filter(m=>m.awarded).map(m=>m.id),['1','2']);
  assert.equal(rows.find(m=>m.id==='4').eligible,false);
  assert.deepEqual(tutsRanking(records,roster,start,end),tutsRanking(records.map(({mic,...r})=>r),roster,start,end));
 });
 test('faltantes, mute, presencia fuera de voz y muestras cortas no ganan io paso',()=>{
- const records=[micRec('1',1440),{...rec('2'),muted:true,spoke:'no'},micRec('3',0,1799),micRec('4',0,5700),{...micRec('5'),inVoice:false}];
+ const records=[micRec('1',5000),{...rec('2'),muted:true,spoke:'no'},micRec('3',0,1799),micRec('4',0,5700),{...micRec('5'),inVoice:false}];
  const rows=ioPasoRanking(records,['1','2','3','4','5','6'].map(id=>member(id)),start,end);
  assert.ok(rows.every(m=>!m.awarded));assert.equal(rows.filter(m=>m.eligible).length,1);
 });
-test('io paso exige 30 minutos, cobertura 80%, hasta 5% y menos de la mitad del referente',()=>{
+test('io paso incluye exactamente 50/50, excluye más actividad y exige 30 minutos y 80% de cobertura',()=>{
  const short=(id,active,observed)=>({...micRec(id,active,observed),end:'2025-02-10T19:37:30Z'});
  const roster=['1','2','3','4','5'].map(id=>member(id));
- const rows=ioPasoRanking([short('1',450,2250),short('2',90,1800),short('3',91,1800),short('4',0,1799),short('5',0,1800)],roster,start,end);
- assert.deepEqual(rows.filter(m=>m.awarded).map(m=>m.id),['5','2']);
- const half=ioPasoRanking([micRec('1',720),micRec('2',360)],roster,start,end);
- assert.ok(half.every(m=>!m.awarded));
+ const rows=ioPasoRanking([short('1',1125,2250),short('2',900,1800),short('3',901,1800),short('4',0,1799),short('5',0,1800)],roster,start,end);
+ assert.deepEqual(rows.filter(m=>m.awarded).map(m=>m.id),['5','1','2']);
+ assert.equal(rows.find(m=>m.id==='2').coverage,.8);
+ assert.equal(rows.find(m=>m.id==='4').eligible,false);
 });
-test('sin comparación o con toda la banda en silencio no inventa un premio',()=>{
- assert.ok(ioPasoRanking([micRec('1')],[member('1')],start,end).every(m=>!m.awarded));
- assert.ok(ioPasoRanking([micRec('1'),micRec('2')],[member('1'),member('2')],start,end).every(m=>!m.awarded));
+test('io paso funciona sin compañeros y con toda la banda en silencio medido',()=>{
+ assert.equal(ioPasoRanking([micRec('1')],[member('1')],start,end)[0].awarded,true);
+ assert.ok(ioPasoRanking([micRec('1'),micRec('2')],[member('1'),member('2')],start,end).every(m=>m.awarded));
+ assert.equal(ioPasoRanking([micRec('1',3600)],[member('1')],start,end)[0].awarded,true);
+ assert.equal(ioPasoRanking([micRec('1',3601)],[member('1')],start,end)[0].awarded,false);
 });
 test('io paso respeta altas, pausas y fechas, y prorratea el micrófono recortado',()=>{
  const roster=[member('1'),member('2','2025-02-10T20:45:00Z'),{...member('3'),active:false},member('4','2025-04-01T00:00:00Z')];
- const rows=ioPasoRanking([micRec('1',1440),micRec('2'),micRec('3'),micRec('4')],roster,start,end);
+ const rows=ioPasoRanking([micRec('1',5000),micRec('2'),micRec('3'),micRec('4')],roster,start,end);
  assert.deepEqual(rows.map(m=>m.id).sort(),['1','2']);assert.equal(rows.find(m=>m.id==='2').observedSeconds,900);assert.ok(rows.every(m=>!m.awarded));
- const clipped=ioPasoRanking([micRec('1',1440),micRec('2')],[member('1'),member('2')],new Date('2025-02-10T20:00:00Z'),new Date('2025-02-10T20:30:00Z'));
- assert.equal(clipped.find(m=>m.id==='1').activeSeconds,360);assert.equal(clipped.find(m=>m.id==='1').observedSeconds,1800);assert.equal(clipped.find(m=>m.id==='2').awarded,true);
+ const clipped=ioPasoRanking([micRec('1',5000),micRec('2')],[member('1'),member('2')],new Date('2025-02-10T20:00:00Z'),new Date('2025-02-10T20:30:00Z'));
+ assert.equal(clipped.find(m=>m.id==='1').activeSeconds,1250);assert.equal(clipped.find(m=>m.id==='1').observedSeconds,1800);assert.equal(clipped.find(m=>m.id==='2').awarded,true);
  assert.ok(ioPasoRanking([micRec('1',1440),micRec('2')],[member('1'),member('2')],start,new Date('2025-02-09T00:00:00Z')).every(m=>!m.awarded));
 });
 test('el archivo histórico recalcula io paso sin tomar actividad de otras semanas',()=>{
- const records=[micRec('1',1440),micRec('2')],roster=[member('1'),member('2')];
+ const records=[micRec('1',5000),micRec('2')],roster=[member('1'),member('2')];
  const weeks=weeklyTuts(records,roster,start,end);
  assert.equal(weeks.filter(w=>w.ioPaso.length).length,1);assert.equal(weeks.find(w=>w.ioPaso.length).ioPaso[0].id,'2');
 });
