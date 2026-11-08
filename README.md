@@ -80,7 +80,7 @@ Un bot puede estar en un solo canal de voz de este servidor a la vez. La escucha
 
 Lectura:
 
-- `GET /api/state`: registros del bot, integrantes de Discord, presencia actual y estado del detector.
+- `GET /api/state`: historial completo del bot, integrantes de Discord, presencia actual y estado del detector. Enviá el `cursor` de la respuesta anterior como parámetro para recibir solo registros nuevos o modificados y `removedRecordIds`. Si el cursor ya no es válido, `full: true` indica que hay que reemplazar el historial local.
 - `GET /api/health`: estado del servicio.
 
 Administración con `Authorization: Bearer ADMIN_KEY`:

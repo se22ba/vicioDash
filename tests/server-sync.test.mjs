@@ -84,6 +84,33 @@ test('una respuesta inválida no sustituye los datos anteriores',async()=>{
  assert.equal(api.currentMembers()[0].id,'123');assert.equal(api.remoteState.bot.connected,false);
 });
 
+test('el refresco aplica altas, cambios y bajas por ID y reemplaza todo al reiniciar',async()=>{
+ const first={id:'first',userId:'123',name:'Jugador',start:'2026-10-20T19:00:00Z',end:'2026-10-20T20:00:00Z',inVoice:true,game:null,spoke:'unknown',muted:false,deafened:false,streaming:false,camera:false,status:'online',source:'bot'};
+ const updated={...first,end:'2026-10-20T21:00:00Z',mic:{kind:'rtp',observedSeconds:100,activeSeconds:25}};
+ const second={...first,id:'second',start:'2026-10-20T21:00:00Z',end:'2026-10-20T22:00:00Z'};
+ const delta={...state,full:false,removedRecordIds:[]};
+ const {api,calls}=app({responses:[
+  {...state,full:true,cursor:'boot:1',records:[first]},
+  {...delta,cursor:'boot:2',records:[updated,second]},
+  {...delta,cursor:'boot:3',records:[{...second,start:'2026-10-20T20:00:00Z'}]},
+  {...delta,cursor:'boot:3',removedRecordIds:['first']},
+  {...state,full:true,cursor:'restarted:0'}
+ ]});
+ assert.equal(await api.refreshServer(true),true);
+ assert.equal(calls[0].path,'./api/state');
+ assert.equal(await api.refreshServer(true),true);
+ assert.equal(calls[1].path,'./api/state?cursor=boot%3A1');
+ assert.equal(api.current().map(r=>r.id).join(','),'second,first');
+ assert.equal(api.current()[1].mic.activeSeconds,25);
+ assert.equal(await api.refreshServer(true),false);
+ assert.equal(api.current().length,2);
+ assert.equal(await api.refreshServer(true),true);
+ assert.equal(calls[3].path,'./api/state?cursor=boot%3A2');
+ assert.equal(api.current().map(r=>r.id).join(','),'second');
+ assert.equal(await api.refreshServer(true),true);
+ assert.equal(api.current().length,0);
+});
+
 test('Ahora en voz excluye a los usuarios online y oculta la sección vacía',async()=>{
  const {api}=app({responses:[{...state,live:[{userId:'fuera',name:'Solo online',inVoice:false},{userId:'voz',name:'Dentro',inVoice:true,channel:'Canal'}]},state]});
  await api.refreshServer(true);assert.doesNotMatch(api.livePanel(),/Solo online/);assert.match(api.livePanel(),/Dentro/);

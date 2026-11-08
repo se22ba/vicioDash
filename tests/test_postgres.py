@@ -30,6 +30,23 @@ class PostgresIntegrationTests(unittest.TestCase):
         self.assertEqual(self.store.get(self.prefix)["name"], self.r["name"])
         self.assertFalse(next(m for m in self.store.members() if m["id"] == self.prefix)["active"])
 
+    def test_history_changes_are_visible_after_commit_from_another_connection(self):
+        other = Store(os.environ["VICIO_TEST_DATABASE_URL"])
+        self.addCleanup(other.close)
+        revision, _, _, _ = self.store.records_since()
+        with other.db:
+            other._write(self.r)
+            self.assertEqual(self.store.records_since(revision), (revision, False, [], []))
+        new_revision, full, records, removed = self.store.records_since(revision)
+        self.assertGreater(new_revision, revision)
+        self.assertFalse(full)
+        self.assertEqual(records, [other.get(self.prefix)])
+        self.assertEqual(removed, [])
+        other.delete(self.prefix)
+        _, _, records, removed = self.store.records_since(new_revision)
+        self.assertEqual(records, [])
+        self.assertEqual(removed, [self.prefix])
+
     def test_import_rolls_back_and_identical_records_are_idempotent(self):
         saved = self.store.put(self.r)
         self.assertEqual(self.store.import_records([saved]), 0)

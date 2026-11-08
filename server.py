@@ -216,8 +216,40 @@ def create_app(db_path=None, admin_key=None, enable_bot=True):
     app[web.AppKey("store", Store)] = store
     app[web.AppKey("observer", Observer)] = observer
 
+    history = {}
+    history_revision = None
+    history_epoch = uuid.uuid4().hex
+
     async def state(request):
-        return web.json_response({"version": 1, "records": [r for r in store.all() if r["source"] == "bot"], "members": [m for m in store.members() if m["id"].isdecimal()], "live": observer.snapshot(),
+        nonlocal history_revision, history_epoch
+        revision, reset, updated, removed = store.records_since(history_revision)
+        if reset and history_revision is not None:
+            history.clear()
+            history_epoch = uuid.uuid4().hex
+        # The newest changes go at the end, so a poll only walks recent entries.
+        for record in updated:
+            history.pop(record["id"], None)
+            history[record["id"]] = (revision, record)
+        for record_id in removed:
+            history.pop(record_id, None)
+            history[record_id] = (revision, None)
+        history_revision = revision
+
+        epoch, _, cursor = request.query.get("cursor", "").partition(":")
+        after = int(cursor) if epoch == history_epoch and len(cursor) <= 19 and cursor.isascii() and cursor.isdecimal() else None
+        full = after is None or after > revision
+        records, removed_ids = [], []
+        for record_id, (changed_at, record) in reversed(history.items()):
+            if not full and changed_at <= after:
+                break
+            if record is not None:
+                records.append(record)
+            elif not full:
+                removed_ids.append(record_id)
+        records.sort(key=lambda record: record["start"], reverse=True)
+        return web.json_response({"version": 1, "cursor": f"{history_epoch}:{revision}", "full": full,
+                                  "records": records, "removedRecordIds": removed_ids,
+                                  "members": [m for m in store.members() if m["id"].isdecimal()], "live": observer.snapshot(),
                                   "awayLive": observer.gaming_snapshot(),
                                   "bot": {"connected": observer.connected, "lastSeen": observer.last_seen},
                                   "voice": observer.voice.snapshot()})

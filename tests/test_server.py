@@ -170,6 +170,36 @@ class ApiTests(AioHTTPTestCase):
         self.assertEqual([r["id"] for r in data["records"]], ["one"])
         self.assertEqual(len(self.store.all()), 2)
 
+    async def test_state_sync_reuses_history_for_old_clients_and_sends_changes_to_new_clients(self):
+        queries = []
+        self.store.db.set_trace_callback(queries.append)
+        first = self.store.put(record())
+
+        async def state(cursor=None):
+            return await (await self.client.get("/api/state", params={"cursor": cursor} if cursor else {})).json()
+
+        snapshot = await state()
+        self.assertTrue(snapshot["full"])
+        self.assertEqual(snapshot["records"], [first])
+        idle = await state(snapshot["cursor"])
+        self.assertFalse(idle["full"])
+        self.assertEqual(idle["records"], [])
+        self.assertEqual(idle["cursor"], snapshot["cursor"])
+
+        updated = self.store.put({**first, "name": "Actualizado"})
+        second = self.store.put({**first, "id": "two", "userId": "2"})
+        delta = await state(snapshot["cursor"])
+        self.assertFalse(delta["full"])
+        self.assertCountEqual(delta["records"], [updated, second])
+        self.store.delete(first["id"])
+        deletion = await state(delta["cursor"])
+        self.assertEqual(deletion["removedRecordIds"], [first["id"]])
+        for cursor in [None, "another-instance:0", snapshot["cursor"].split(":")[0] + ":999999"]:
+            resync = await state(cursor)
+            self.assertTrue(resync["full"])
+            self.assertEqual(resync["records"], [second])
+        self.assertEqual(sum("LEFT JOIN records ON TRUE" in sql for sql in queries), 1)
+
     async def test_state_exposes_gaming_outside_voice_in_a_separate_feed(self):
         observer = next(v for v in self.app.values() if isinstance(v, Observer))
         observer.connected = True

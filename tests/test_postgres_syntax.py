@@ -24,6 +24,9 @@ class SyntaxCheckedDriver:
 
     def execute(self, query, parameters=()):
         parse_sql(re.sub(r"%s", "NULL", query))
+        if query.lstrip().startswith(("LOCK TABLE", "CREATE OR REPLACE FUNCTION", "CREATE OR REPLACE TRIGGER")):
+            # PostgreSQL trigger DDL is parsed here and executed in the integration suite.
+            return None
         return self.db.execute(query.replace("%s", "?"), parameters)
 
     def transaction(self):

@@ -1,7 +1,7 @@
 import {validateMembers,attendance} from './attendance.js';
 import {tutsRanking,ioPasoRanking,weeklyTuts,historyStart,withLiveVoice,TUTS_MEDALS,playerTitles} from './tuts.js?v=awards-3';
 import {crauzyRanking,withLiveGaming} from './crauzy.js?v=crauzy-1';
-import {STATES,esc,hours,category,validateImport,bounds,selectRecords,summarize,dailyMinutes,voiceRecords,microphoneSummary} from './model.js';
+import {STATES,esc,hours,category,validateImport,assertNoOverlap,bounds,selectRecords,summarize,dailyMinutes,voiceRecords,microphoneSummary} from './model.js';
 
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const KEY='vicio.records.v1';
@@ -178,9 +178,21 @@ async function request(path,method='GET',body,token=adminToken()){
 async function refreshServer(silent=false){
  if(refreshing)return false;refreshing=true;
  try{
-  const d=await request('./api/state');
+  const cursor=remoteState?.cursor;
+  const d=await request('./api/state'+(cursor?'?cursor='+encodeURIComponent(cursor):''));
   if(d.version!==1||!Array.isArray(d.records))throw Error('No se encontró el servidor de VICIO.');
-  const records=validateImport(d).filter(r=>r.source==='bot'),roster=validateMembers(d.members||[]).filter(m=>/^\d+$/.test(m.id));
+  let records=validateImport(d).filter(r=>r.source==='bot');
+  const roster=validateMembers(d.members||[]).filter(m=>/^\d+$/.test(m.id));
+  if(d.full===false){
+   if(!cursor||typeof d.cursor!=='string'||!Array.isArray(d.removedRecordIds)||d.removedRecordIds.some(id=>typeof id!=='string'))throw Error('Actualización de historial inválida.');
+   if(records.length||d.removedRecordIds.length){
+    const byId=new Map(local.map(record=>[record.id,record]));
+    for(const id of d.removedRecordIds)byId.delete(id);
+    for(const record of records)byId.set(record.id,record);
+    records=[...byId.values()].sort((a,b)=>b.start.localeCompare(a.start));
+    assertNoOverlap(records);
+   }else records=local;
+  }
   remote=true;remoteState=d;local=records;members=roster;tutsUpdated=new Date();
   populateFilters();render();
   if(!silent)toast('Lista e historial de Discord actualizados.');
@@ -225,4 +237,4 @@ for(const el of [...$$('[data-extra]'),...['#player-filter','#game-filter','#sta
 let searchTimer;document.addEventListener('input',e=>{if(e.target.id==='history-search'){const value=e.target.value,caret=e.target.selectionStart;clearTimeout(searchTimer);searchTimer=setTimeout(()=>{search=value;resetPages();render();const input=$('#history-search');if(input){input.focus();input.setSelectionRange(caret,caret)}},180)}});
 for(const d of $$('dialog'))d.addEventListener('click',e=>{if(e.target===d){const r=d.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)d.close()}});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!$('dialog[open]'))void refreshServer(true)});
-populateFilters();setView('resumen');void refreshServer(true);setInterval(()=>{if(!$('dialog[open]'))void refreshServer(true)},30000);
+populateFilters();setView('resumen');void refreshServer(true);setInterval(()=>{if(!document.hidden&&!$('dialog[open]'))void refreshServer(true)},30000);

@@ -147,6 +147,47 @@ class Store:
         self.db.execute("CREATE TABLE IF NOT EXISTS members (id TEXT PRIMARY KEY, payload TEXT NOT NULL)")
         self.db.execute("CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY, value TEXT NOT NULL)")
         self.db.commit()
+        self._init_record_sync()
+
+    def _init_record_sync(self):
+        # The counter is locked until the write commits, so readers cannot skip a
+        # change from an earlier revision that was still in flight.
+        with self.db:
+            if self.postgres:
+                self.db.execute("LOCK TABLE records IN SHARE ROW EXCLUSIVE MODE")
+            self.db.execute("CREATE TABLE IF NOT EXISTS record_sync (id INTEGER PRIMARY KEY, revision BIGINT NOT NULL)")
+            self.db.execute("INSERT INTO record_sync VALUES (1, 0) ON CONFLICT(id) DO NOTHING")
+            self.db.execute("CREATE TABLE IF NOT EXISTS record_changes (record_id TEXT PRIMARY KEY, revision BIGINT NOT NULL)")
+            self.db.execute("CREATE INDEX IF NOT EXISTS record_changes_revision ON record_changes(revision)")
+            if self.postgres:
+                self.db.execute("""
+                    CREATE OR REPLACE FUNCTION track_record_change() RETURNS trigger
+                    LANGUAGE plpgsql SET search_path TO vicio, pg_catalog AS $$
+                    DECLARE next_revision bigint;
+                    BEGIN
+                        UPDATE record_sync SET revision = revision + 1 WHERE id = 1
+                        RETURNING revision INTO next_revision;
+                        INSERT INTO record_changes VALUES (
+                            CASE WHEN TG_OP = 'DELETE' THEN OLD.id ELSE NEW.id END, next_revision
+                        ) ON CONFLICT(record_id) DO UPDATE SET revision = excluded.revision;
+                        RETURN NULL;
+                    END;
+                    $$
+                """)
+                self.db.execute("""
+                    CREATE OR REPLACE TRIGGER track_record_change AFTER INSERT OR UPDATE OR DELETE ON records
+                    FOR EACH ROW EXECUTE FUNCTION track_record_change()
+                """)
+            else:
+                for event, row in [("INSERT", "NEW"), ("UPDATE", "NEW"), ("DELETE", "OLD")]:
+                    self.db.execute(f"""
+                        CREATE TRIGGER IF NOT EXISTS track_record_{event.lower()} AFTER {event} ON records
+                        BEGIN
+                            UPDATE record_sync SET revision = revision + 1 WHERE id = 1;
+                            INSERT INTO record_changes VALUES ({row}.id, (SELECT revision FROM record_sync WHERE id = 1))
+                            ON CONFLICT(record_id) DO UPDATE SET revision = excluded.revision;
+                        END
+                    """)
 
     def setting(self, key, default=""):
         row = self.db.execute("SELECT value FROM settings WHERE id=?", (key,)).fetchone()
@@ -158,6 +199,32 @@ class Store:
 
     def all(self):
         return [json.loads(row[0]) for row in self.db.execute('SELECT payload FROM records ORDER BY "start" DESC')]
+
+    def records_since(self, after=None):
+        # Use one statement so the watermark and returned rows share a database snapshot.
+        if after is None:
+            rows = self.db.execute('''SELECT sync.revision, records.id, records.payload
+                                      FROM record_sync AS sync LEFT JOIN records ON TRUE
+                                      WHERE sync.id = 1 ORDER BY records."start" DESC''')
+        else:
+            rows = self.db.execute('''SELECT sync.revision, changes.record_id, records.payload
+                                      FROM record_sync AS sync
+                                      LEFT JOIN record_changes AS changes ON changes.revision > ?
+                                      LEFT JOIN records ON records.id = changes.record_id
+                                      WHERE sync.id = 1 ORDER BY records."start" DESC''', (after,))
+        revision = None
+        records, removed = [], []
+        for revision, record_id, payload in rows:
+            if record_id is None:
+                continue
+            record = json.loads(payload) if payload is not None else None
+            if record is not None and record["source"] == "bot":
+                records.append(record)
+            elif after is not None:
+                removed.append(record_id)
+        if after is not None and revision < after:
+            return self.records_since()
+        return revision, after is None, records, removed
 
     def get(self, record_id):
         row = self.db.execute("SELECT payload FROM records WHERE id=?", (record_id,)).fetchone()
