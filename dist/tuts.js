@@ -52,21 +52,54 @@ export function ioPasoRanking(records,members,start,end,now=new Date()){
 }
 
 export const TUTS_MEDALS={
- gold:{label:'Tuts de oro',icon:'🥇',title:'OPERADOR FANTASMA',slogan:'Lo buscamos hasta en el lobby del supermercado.'},
- silver:{label:'Tuts de plata',icon:'🥈',title:'EL TURISTA',slogan:'Entra, saluda y se vuelve al menú principal.'},
- bronze:{label:'Tuts de bronce',icon:'🥉',title:'SEÑAL INTERMITENTE',slogan:'Conectando con la banda… 3%.'}
+ gold:{label:'Tuts de oro',icon:'🥇',slogan:'Si aparece, se suspende la búsqueda.'},
+ silver:{label:'Tuts de plata',icon:'🥈',slogan:'Tiene más coartadas que horas en voz.'},
+ bronze:{label:'Tuts de bronce',icon:'🥉',slogan:'Figura en la lista. Hasta ahí la evidencia.'}
 };
+
+const callsigns={
+ absent:['Coartada en PDF','Desaparecido con Wi-Fi','Testigo que no comparece','Presunto integrante','Se busca, sin apuro','Cadáver administrativo'],
+ brief:['Entró a dejar el cadáver','Asistencia por delivery','Saludó y pidió asilo','Turista de 15 minutos'],
+ longest:['Le embargaron el canal','Inquilino sin contrato','El canal le cobra expensas','Le llegó el ABL de Discord'],
+ frequent:['Fichó hasta en feriado','Empleado del mes, ad honorem','Marcó tarjeta en su propio velorio'],
+ quiet:['Cómplice por omisión','La defensa pide silencio','Se llevó el mic al cajón'],
+ streaming:['Transmitió hasta el velorio','Director del desastre','Lo filmó por las dudas'],
+ manyGames:['Probó todo y no terminó nada','Infiel al launcher','Catador de fracasos','La biblioteca pide ayuda','Reincidente de Steam'],
+ muted:['Abogado del mute','Micrófono bajo custodia','Cerrado por duelo'],
+ chatting:['Entró a ventilar el quilombo','Panelista sin sueldo','El chisme era presencial','Vino a declarar'],
+ regular:['Reincidente del canal','Volvió a la escena del crimen','Tiene la pulsera de visitante'],
+ gaming:['Juega y después vemos','El vicio tiene su horario','Vino por el botín','Operativo: una más']
+};
+
 export function playerTitles(rows,records,start,end){
  const maxMinutes=Math.max(0,...rows.map(m=>m.voiceMinutes)),maxDays=Math.max(0,...rows.map(m=>m.voiceDays));
- const games=new Map();for(const r of selectRecords(records,{start,end})){if(r.inVoice&&r.game){if(!games.has(r.userId))games.set(r.userId,new Set());games.get(r.userId).add(r.game)}}
+ const activity=new Map(rows.map(m=>[m.id,{since:Date.parse(m.since),games:new Set(),played:0,streamed:0,muted:0}]));
+ for(const r of selectRecords(records,{start,end})){
+  const player=activity.get(r.userId);
+  if(!r.inVoice||!player||+r.clippedEnd<=player.since)continue;
+  const minutes=(+r.clippedEnd-Math.max(+r.clippedStart,player.since))/60000;
+  if(r.game){player.games.add(r.game);player.played+=minutes}
+  if(r.streaming)player.streamed+=minutes;
+  if(r.muted)player.muted+=minutes;
+ }
  return new Map(rows.map(m=>{
-  const titles=[];
-  if(m.voiceMinutes===0)titles.push({label:'Operador fantasma',icon:'👻',description:'Cero entradas a voz en este período. La leyenda sigue intacta.'});
-  if(m.voiceMinutes>0&&m.voiceMinutes===maxMinutes)titles.push({label:'El ancla',icon:'⚓',description:'Más tiempo en voz. Si se va, se hunde el canal.'});
-  if(m.voiceDays>=2&&m.voiceDays===maxDays)titles.push({label:'Fichaje perfecto',icon:'📅',description:'Más días presente en voz. El único que leyó la invitación.'});
-  if((games.get(m.id)?.size||0)>=3)titles.push({label:'Multiclase',icon:'🎮',description:'Tres juegos o más en voz. Cambia de misión, conserva la banda.'});
-  if(m.ioPaso?.awarded)titles.push({label:'Ninja del mic',icon:'🤐',description:'Io paso: compartió sala y dejó que el resto llevara la conversación.'});
-  return [m.id,titles];
+  const {games,played,streamed,muted}=activity.get(m.id);
+  let kind,description;
+  if(!m.voiceMinutes){kind='absent';description='Cero minutos en voz en las fechas elegidas.'}
+  else if(m.ioPaso?.awarded){kind='quiet';description='Se llevó el sello Io paso por baja actividad de micrófono en compañía.'}
+  else if(m.voiceMinutes===maxMinutes){kind='longest';description='Mayor tiempo acumulado en voz.'}
+  else if(m.voiceDays>=2&&m.voiceDays===maxDays){kind='frequent';description=`Mayor cantidad de días en voz (${m.voiceDays}).`}
+  else if(m.voiceMinutes<15){kind='brief';description='Menos de 15 minutos totales en voz.'}
+  else if(streamed>=15){kind='streaming';description='Transmitió al menos 15 minutos en voz.'}
+  else if(muted>=15&&muted>=m.voiceMinutes*.75){kind='muted';description='Estuvo muteado al menos tres cuartos de su tiempo en voz.'}
+  else if(games.size>=3){kind='manyGames';description=`Jugó ${games.size} juegos distintos en voz.`}
+  else if(played>=m.voiceMinutes*.75){kind='gaming';description='Pasó al menos tres cuartos de su tiempo en voz con un juego visible.'}
+  else if(m.voiceMinutes-played>=30&&played<=m.voiceMinutes*.25){kind='chatting';description='Al menos 30 minutos en voz sin juego visible y hasta un cuarto del tiempo jugando.'}
+  else{kind='regular';description='Tuvo actividad en voz durante las fechas elegidas.'}
+  // Choose a stable variant per player, including when several share the same achievement.
+  const variants=callsigns[kind];
+  let hash=0;for(const char of m.id)hash=(Math.imul(hash,31)+char.charCodeAt(0))>>>0;
+  return [m.id,{kind,label:variants[hash%variants.length],description}];
  }));
 }
 

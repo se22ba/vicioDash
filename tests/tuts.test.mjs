@@ -75,8 +75,14 @@ test('oro plata y bronce corresponden a tres niveles distintos y los empates com
  assert.deepEqual(rows.map(m=>m.medal),['gold','gold','silver','bronze',null]);assert.deepEqual(rows.map(m=>m.rank),[1,1,3,4,5]);
  assert.ok(tutsRanking([],members,start,end).every(m=>m.medal===null));
 });
-test('los títulos de partida se ganan con datos reales y admiten empates',()=>{
- const records=[rec('2'),rec('2','2025-02-11T19:00:00Z','2025-02-11T21:00:00Z'),...['Uno','Dos','Tres'].map(game=>({...rec('3'),game}))];
- const rows=tutsRanking(records,roster('1','2','3'),start,end),titles=playerTitles(rows,records,start,end);
- assert.ok(titles.get('1').some(t=>t.label==='Operador fantasma'));assert.ok(titles.get('2').some(t=>t.label==='Fichaje perfecto'));assert.ok(titles.get('3').some(t=>t.label==='Multiclase'));assert.ok(titles.get('3').some(t=>t.label==='El ancla'));
+test('cada jugador tiene un título estable, con variantes para un mismo logro',()=>{
+ const records=[rec('2'),rec('2','2025-02-11T19:00:00Z','2025-02-11T21:00:00Z'),
+  rec('3','2025-02-10T17:00:00Z','2025-02-10T22:00:00Z'),
+  ...['Uno','Dos','Tres'].map((game,i)=>({...rec('4',`2025-02-10T${18+i}:00:00Z`,`2025-02-10T${19+i}:00:00Z`),game})),
+  {...rec('6'),streaming:true},rec('7','2025-02-10T19:00:00Z','2025-02-10T19:03:00Z')];
+ const rows=tutsRanking(records,roster('1','2','3','4','5','6','7'),start,end),titles=playerTitles(rows,records,start,end);
+ assert.deepEqual(['1','2','3','4','5','6','7'].map(id=>titles.get(id).kind),['absent','frequent','longest','manyGames','absent','streaming','brief']);
+ assert.notEqual(titles.get('1').label,titles.get('5').label);
+ assert.match(titles.get('4').description,/3 juegos distintos/);
+ assert.deepEqual(playerTitles(rows,[...records].reverse(),start,end),titles);
 });

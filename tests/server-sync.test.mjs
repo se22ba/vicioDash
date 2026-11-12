@@ -148,7 +148,7 @@ test('el podio muestra la corona y escapa nombres, con toda la banda y archivo s
  const raw={id:'tuts-ui',sessionId:'tuts-ui',userId:'456',name:'Asistente',start:'2026-10-20T19:00:00Z',end:'2026-10-20T21:00:00Z',inVoice:true,game:null,spoke:'unknown',muted:false,deafened:false,streaming:false,camera:false,status:'online',source:'bot'};
  const {api,el}=app({responses:[{...state,records:[raw],members:[{...member,name:'<img onerror=evil>'},{...member,id:'456',name:'Asistente'}]}]});
  await api.refreshServer(true);api.setTutsRange(start,end);el('#player-filter').value='456';
- const panel=api.tutsPanel();assert.match(panel,/tuts-podium/);assert.match(panel,/tuts-crowned.png/);assert.match(panel,/&lt;img onerror=evil&gt;/);assert.doesNotMatch(panel,/<img onerror=evil>/);assert.match(panel,/archivo de las excusas/);assert.match(panel,/2 integrantes/);assert.match(panel,/100/);
+ const panel=api.tutsPanel();assert.match(panel,/tuts-podium/);assert.match(panel,/tuts-crowned.png/);assert.match(panel,/&lt;img onerror=evil&gt;/);assert.doesNotMatch(panel,/<img onerror=evil>/);assert.match(panel,/Archivo de las excusas/);assert.match(panel,/2 integrantes/);assert.match(panel,/100/);
 });
 
 test('io paso comparte tabla y podio, muestra evidencia y respeta el período histórico',async()=>{
@@ -157,8 +157,8 @@ test('io paso comparte tabla y podio, muestra evidencia y respeta el período hi
  const {api,el}=app({responses:[{...state,records:[raw,talker],members:[{...member,name:'<Oyente>'},{...member,id:'456',name:'Locutor'}]}]});
  await api.refreshServer(true);api.setTutsRange(new Date('2026-10-01T00:00:00Z'),new Date('2026-10-27T20:00:00Z'));
  el('#player-filter').value='456';const panel=api.tutsPanel();
- assert.match(panel,/class="tuts-full" open/);assert.match(panel,/class="io-paso-badge"/);assert.match(panel,/io-paso.webp/);assert.match(panel,/&lt;Oyente&gt;: io paso/);
- assert.match(panel,/cobertura 100%/);assert.match(panel,/Io paso: &lt;Oyente&gt;/);assert.equal((panel.match(/<ol/g)||[]).length,1);assert.match(panel,/Mostrá la cuenta/);assert.match(panel,/Regla <strong>50 y 50/);assert.doesNotMatch(panel,/hasta el 5%|proporción del más activo|dos o más integrantes/);assert.equal((panel.match(/class="io-paso-badge"/g)||[]).length,1);assert.doesNotMatch(panel,/<Oyente>/);
+ assert.match(panel,/<details class="tuts-full">/);assert.match(panel,/class="io-paso-badge"/);assert.match(panel,/io-paso.webp/);assert.match(panel,/&lt;Oyente&gt;: io paso/);
+ assert.match(panel,/cobertura 100%/);assert.match(panel,/Io paso: &lt;Oyente&gt;/);assert.equal((panel.match(/<ol/g)||[]).length,1);assert.match(panel,/Mostrá la cuenta/);assert.match(panel,/50% del tiempo en silencio en sala compartida/);assert.equal((panel.match(/class="io-paso-badge"/g)||[]).length,1);assert.doesNotMatch(panel,/<Oyente>/);
  api.setTutsRange(new Date('2026-10-21T00:00:00Z'),new Date('2026-10-27T20:00:00Z'));assert.doesNotMatch(api.tutsPanel(),/class="io-paso-badge"/);
  api.setTutsMode('history');assert.match(api.tutsPanel(),/class="io-paso-badge"/);
 });
@@ -168,13 +168,14 @@ test('las medallas muestran niveles distintos, empates y títulos reales sin dup
  const raw={id:'medal-ui',sessionId:'medal-ui',userId:'456',name:'Asistente',start:'2026-10-20T19:00:00Z',end:'2026-10-20T21:00:00Z',inVoice:true,channelId:'99',game:null,spoke:'unknown',muted:false,deafened:false,streaming:false,camera:false,status:'online',source:'bot'};
  const {api}=app({responses:[{...state,records:[raw],members:[member,{...member,id:'124',name:'Otro ausente'},{...member,id:'456',name:'Asistente'}]}]});
  await api.refreshServer(true);api.setTutsRange(new Date('2026-10-01'),new Date('2026-10-27'));
- const panel=api.tutsPanel();assert.match(panel,/Tuts de oro/);assert.match(panel,/Tuts de plata/);assert.match(panel,/Tuts de bronce/);assert.match(panel,/METAL COMPARTIDO/);assert.match(panel,/Puesto vacante/);assert.match(panel,/Operador fantasma/);assert.match(panel,/El ancla/);assert.equal((panel.match(/<ol/g)||[]).length,1);
+ const panel=api.tutsPanel();assert.match(panel,/Tuts de oro/);assert.match(panel,/Tuts de plata/);assert.match(panel,/Tuts de bronce/);assert.match(panel,/Metal compartido/);assert.match(panel,/Puesto vacante/);
+ assert.equal((panel.match(/data-title-fact=/g)||[]).length,3);assert.match(panel,/Mayor tiempo acumulado en voz/);assert.equal((panel.match(/<ol/g)||[]).length,1);
 });
 
 test('las declaraciones tipográficas respetan el mínimo de 11px incluso en móvil',()=>{
  const css=readFileSync(new URL('../dist/style.css',import.meta.url),'utf8');
  for(const declaration of css.matchAll(/\bfont(?:-size)?\s*:([^;}]+)/g))for(const size of declaration[1].matchAll(/(?<![\w.-])(\d+(?:\.\d+)?)px/g))assert.ok(Number(size[1])>=11,`Fuente menor a 11px: ${declaration[0]}`);
- assert.match(css,/@media\(max-width:850px\)/);assert.match(css,/tuts-podium\{grid-template-columns:1fr/);
+ assert.match(css,/@media\(max-width:850px\)/);assert.match(css,/tuts-podium \.medal-gold\{grid-column:1\/-1/);
 });
 
 
