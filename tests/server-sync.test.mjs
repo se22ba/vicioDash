@@ -149,6 +149,9 @@ test('el podio muestra la corona y escapa nombres, con toda la banda y archivo s
  const {api,el}=app({responses:[{...state,records:[raw],members:[{...member,name:'<img onerror=evil>'},{...member,id:'456',name:'Asistente'}]}]});
  await api.refreshServer(true);api.setTutsRange(start,end);el('#player-filter').value='456';
  const panel=api.tutsPanel();assert.match(panel,/tuts-podium/);assert.match(panel,/tuts-crowned.png/);assert.match(panel,/&lt;img onerror=evil&gt;/);assert.doesNotMatch(panel,/<img onerror=evil>/);assert.match(panel,/Archivo de las excusas/);assert.match(panel,/2 integrantes/);assert.match(panel,/100/);
+ const gold=panel.match(/<article class="tuts-place medal-gold">([\s\S]*?)<\/article>/)[1];
+ assert.match(gold,/data-focus-key="podium-title-123" data-title-fact="Cero minutos en voz/);
+ assert.equal(gold.match(/class="player-title"[^>]*>([^<]+)<\/button>/)[1],panel.match(/data-focus-key="title-123"[^>]*>([^<]+)<\/button>/)[1]);
 });
 
 test('io paso comparte tabla y podio, muestra evidencia y respeta el período histórico',async()=>{
@@ -169,6 +172,7 @@ test('las medallas muestran niveles distintos, empates y títulos reales sin dup
  const {api}=app({responses:[{...state,records:[raw],members:[member,{...member,id:'124',name:'Otro ausente'},{...member,id:'456',name:'Asistente'}]}]});
  await api.refreshServer(true);api.setTutsRange(new Date('2026-10-01'),new Date('2026-10-27'));
  const panel=api.tutsPanel();assert.match(panel,/Tuts de oro/);assert.match(panel,/Tuts de plata/);assert.match(panel,/Tuts de bronce/);assert.match(panel,/Metal compartido/);assert.match(panel,/Puesto vacante/);
+ assert.doesNotMatch(panel,/data-focus-key="podium-title-/);
  assert.equal((panel.match(/data-title-fact=/g)||[]).length,3);assert.match(panel,/Mayor tiempo acumulado en voz/);assert.equal((panel.match(/<ol/g)||[]).length,1);
 });
 

@@ -131,6 +131,10 @@ function crauzyPanel(){
  ${rows.length?`<div class="crauzy-table-head" aria-hidden="true"><span>EXPEDIENTE / INTEGRANTE</span><span>JUEGOS FUERA DE VOZ</span><span>TIEMPO FUERA</span></div><ol class="crauzy-list">${rows.map(m=>`<li><span class="crauzy-position">${m.rank}</span><div class="crauzy-person">${avatar(m.name,m.id)}<div><strong>${esc(m.name)}</strong><span>${m.winner?'Crauzy te vio online':m.qualified?'En el radar':m.awayMinutes?'Menos de 30 min · sin sello':'Jugó en nuestra voz'}</span></div>${m.winner?crauzyBadge({name:m.name,crauzy:m}):''}</div><div class="crauzy-games">${m.games.length?m.games.slice(0,3).map(g=>`<span>${esc(g.name)}</span>`).join('')+(m.games.length>3?`<span>+${m.games.length-3} juegos</span>`:''):'—'}</div><div class="crauzy-time"><strong>${crauzyDuration(m.awayMinutes)}</strong><span>${Math.round(m.share*100)}% del juego observado</span></div></li>`).join('')}</ol>`:'<p class="crauzy-no-data">Todavía no hay juegos visibles registrados en estas fechas. Estar online, por sí solo, no arma un expediente.</p>'}
  <details class="crauzy-rules"><summary>¿Qué ve Crauzy? La lupa tiene límites.</summary><p>Ordenamos por minutos acumulados con <strong>juego visible y sin estar en ningún canal de voz de este servidor</strong>. Cuenta la actividad “Jugando” que Discord informa para integrantes de la banda; no confirma si estaban usando activamente el juego. Se necesitan <strong>30 minutos fuera de voz</strong> para llevarse el sticker. El puesto se compara por minutos completos y los empates comparten sello.</p><p>“Histórico” usa todos los registros disponibles hasta la fecha final. Los filtros de jugador, juego y actividad no alteran este ranking. Los pausados no compiten. Las sesiones en curso suman solo su cola pendiente, con el último pulso del bot y sin duplicar tiempo.</p><p>Discord debe mostrar el juego. <strong>Invisible, juego oculto o actividad no informada no se adivinan</strong>. Estar online sin juego no suma. No podemos afirmar en qué otro servidor estaban, con quién jugaban ni si jugaban solos; tampoco recuperar actividad de los cortes del bot. El sello de Crauzy se calcula aparte de Tuts e Io paso.</p></details></section>`;
 }
+function playerTitleButton(title,focusKey){
+ return `<button type="button" class="player-title" data-focus-key="${esc(focusKey)}" data-title-fact="${esc(title.description)}" title="${esc(title.description)}">${esc(title.label)}</button>`;
+}
+
 function tutsPanel(){
  const {now,records,start,end}=awardContext();
  const rows=tutsRanking(records,members,start,end,now),weeks=weeklyTuts(records,members,start,end,now);
@@ -142,10 +146,12 @@ function tutsPanel(){
  const score=m=>m.score===null?'—':number.format(m.score);
  const podium=Object.entries(TUTS_MEDALS).map(([key,medal])=>{
   const people=rows.filter(m=>m.medal===key);
+  const champion=key==='gold'&&people.length===1?people[0]:null;
   return `<article class="tuts-place medal-${key}${people.length?'':' medal-vacant'}">
    <h3 class="medal-label"><span aria-hidden="true">${medal.icon}</span> ${medal.label}</h3>
    ${people.length?`<div class="medal-result"><p class="medal-names">${people.map(m=>esc(m.name)).join(' · ')}</p><p class="tuts-score">${score(people[0])}<small> / 100</small></p></div>
-   <p class="medal-slogan">${people.length>1?'Metal compartido. ':''}${medal.slogan}</p>${key==='gold'?tutsSticker():''}`:'<p class="medal-names">Puesto vacante</p>'}
+   ${champion?playerTitleButton(titles.get(champion.id),'podium-title-'+champion.id):`<p class="medal-slogan">${people.length>1?'Metal compartido. ':''}${medal.slogan}</p>`}
+   ${key==='gold'?tutsSticker():''}`:'<p class="medal-names">Puesto vacante</p>'}
    </article>`;
  }).join('');
  const table=rows.length?`<details class="tuts-full">
@@ -156,7 +162,7 @@ function tutsPanel(){
     <span class="tuts-list-rank" aria-label="${m.score===null?'Sin puesto':'Puesto '+m.rank}">${m.score===null?'—':m.rank}</span>
     <div class="tuts-list-person">${avatar(m.name,m.id)}<div class="tuts-person-copy">
      <strong>${esc(m.name)}${medal?` <span class="medal-chip" role="img" aria-label="${medal.label}" title="${medal.label}">${medal.icon}</span>`:''}</strong>
-     <button type="button" class="player-title" data-focus-key="title-${esc(m.id)}" data-title-fact="${esc(title.description)}" title="${esc(title.description)}">${esc(title.label)}</button>
+     ${playerTitleButton(title,'title-'+m.id)}
      ${m.provisional?'<small>Provisorio</small>':''}
     </div></div>
     ${badges?`<div class="tuts-awards">${badges}</div>`:''}

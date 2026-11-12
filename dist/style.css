@@ -206,6 +206,7 @@ details.live-strip{display:block}
  font-size:13px;line-height:1.4;text-decoration:underline dotted;text-underline-offset:3px;overflow-wrap:anywhere
 }
 .player-title:hover{color:var(--ink)}
+.medal-gold .player-title{align-self:flex-start;color:var(--medal-ink);font-weight:700}
 .tuts-list-stats{grid-area:stats;text-align:right;font:12px var(--mono);color:var(--muted)}
 .tuts-list-score{grid-area:score;text-align:right;font:750 25px var(--title);color:var(--gold);font-variant-numeric:tabular-nums}
 .tuts-awards{grid-area:awards;display:flex;justify-content:flex-end;gap:3px;flex-wrap:wrap}
